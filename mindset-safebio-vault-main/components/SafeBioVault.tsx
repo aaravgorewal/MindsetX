@@ -123,6 +123,9 @@ const SafeBioVault: React.FC = () => {
   const [agenticResult, setAgenticResult] = useState<any>(null);
   const [twinSimulation, setTwinSimulation] = useState<string>('');
   const [twinInput, setTwinInput] = useState('');
+  const [isTwinLoading, setIsTwinLoading] = useState(false);
+  const [twinProvider, setTwinProvider] = useState<'gemini' | 'openai' | 'offline-template' | null>(null);
+  const [twinError, setTwinError] = useState<string>('');
   const [multiModalResult, setMultiModalResult] = useState('');
   const [mmTextInput, setMmTextInput] = useState('');
   
@@ -428,13 +431,25 @@ const SafeBioVault: React.FC = () => {
   };
 
   const triggerTwinSimulation = async () => {
-      if(!twinInput) return;
-      setIsSdohAnalyzing(true);
+      const trimmed = twinInput.trim();
+      if (!trimmed) {
+          setTwinError('Please enter a drug name before simulating.');
+          return;
+      }
+      setTwinError('');
+      setTwinSimulation('');
+      setTwinProvider(null);
+      setIsTwinLoading(true);
       try {
-          const result = await simulateDigitalTwin(twinInput, bioProfile);
-          setTwinSimulation(result);
-      } catch(e) { console.error(e); }
-      setIsSdohAnalyzing(false);
+          const result = await simulateDigitalTwin(trimmed, bioProfile);
+          setTwinSimulation(result.text);
+          setTwinProvider(result.provider);
+      } catch (e: any) {
+          console.error('[Digital Twin] Error:', e);
+          setTwinError(e?.message || 'Simulation failed. All AI providers are unavailable — please try again later.');
+      } finally {
+          setIsTwinLoading(false);
+      }
   };
 
   const triggerMultiModal = async () => {
@@ -682,7 +697,134 @@ const SafeBioVault: React.FC = () => {
   // ... (Agentic, Twin, Multimodal, Research, Federated, Security, Emergency, SDoH Views are preserved) ...
   // Re-pasting standard view blocks for completion
   if (vaultView === 'AGENTIC') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="Agentic AI" subtitle="Autonomous Medical Partner" icon={Bot} onBack={() => setVaultView('MAIN')} /><div className="flex-1 overflow-y-auto p-6 space-y-6"><button onClick={triggerAgenticWorkflow} className="px-6 py-3 bg-saffron-500 text-white font-bold rounded-xl">Run Risk Analysis</button>{agenticResult && <p className="text-white mt-4">{JSON.stringify(agenticResult)}</p>}</div></div>;
-  if (vaultView === 'TWIN') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="Digital Twin" subtitle="Virtual Patient Simulation" icon={Layers} onBack={() => setVaultView('MAIN')} /><div className="flex-1 overflow-y-auto p-6"><input type="text" className="w-full p-2 rounded bg-white/10 mb-2" value={twinInput} onChange={e=>setTwinInput(e.target.value)} placeholder="Drug Name" /><button onClick={triggerTwinSimulation} className="bg-teal-600 px-4 py-2 rounded">Simulate</button>{twinSimulation && <p className="mt-4 text-sm">{twinSimulation}</p>}</div></div>;
+  if (vaultView === 'TWIN') return (
+    <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative">
+      <VaultHeader title="Digital Twin" subtitle="Virtual Patient Simulation" icon={Layers} onBack={() => setVaultView('MAIN')} />
+      <div className="flex-1 overflow-y-auto p-6 space-y-4 no-scrollbar">
+
+        {/* Input Section */}
+        <div className="space-y-3">
+          <label className="block text-xs text-gray-400 font-medium uppercase tracking-wider">Drug / Compound Name</label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              className="flex-1 px-4 py-3 rounded-xl bg-white/10 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/30 transition-all text-sm"
+              value={twinInput}
+              onChange={e => { setTwinInput(e.target.value); if (twinError) setTwinError(''); }}
+              onKeyDown={e => e.key === 'Enter' && triggerTwinSimulation()}
+              placeholder="e.g. Ibuprofen, Metformin, Amoxicillin"
+              disabled={isTwinLoading}
+            />
+            <button
+              onClick={triggerTwinSimulation}
+              disabled={isTwinLoading}
+              className="px-6 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-semibold rounded-xl hover:from-teal-500 hover:to-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm shadow-lg shadow-teal-900/30 flex items-center gap-2"
+            >
+              {isTwinLoading ? (
+                <><span className="w-2 h-2 bg-white rounded-full animate-bounce" /><span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.1s'}} /><span className="w-2 h-2 bg-white rounded-full animate-bounce" style={{animationDelay: '0.2s'}} /></>
+              ) : (
+                'Simulate'
+              )}
+            </button>
+          </div>
+
+          {/* Validation / Error Message */}
+          {twinError && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-300 text-sm flex items-start gap-2">
+              <span className="text-red-400 mt-0.5 flex-none">⚠</span>
+              <span>{twinError}</span>
+            </div>
+          )}
+
+          {/* Bio Context Info */}
+          <div className="bg-white/5 rounded-xl px-4 py-2.5 border border-white/5">
+            <p className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">Patient Bio-Context</p>
+            <p className="text-xs text-gray-400 mt-0.5 truncate">{bioProfile}</p>
+          </div>
+        </div>
+
+        {/* Loading State */}
+        {isTwinLoading && (
+          <div className="flex justify-center py-8">
+            <div className="bg-white/10 px-6 py-4 rounded-2xl flex items-center space-x-2 border border-white/5 shadow-sm">
+              <div className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" />
+              <div className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{animationDelay: '100ms'}} />
+              <div className="w-2 h-2 bg-teal-400 rounded-full animate-bounce" style={{animationDelay: '200ms'}} />
+              <span className="text-xs text-gray-400 ml-2">Running pharmacological simulation for <strong className="text-teal-300">{twinInput}</strong>...</span>
+            </div>
+          </div>
+        )}
+
+        {/* Results Section */}
+        {twinSimulation && !isTwinLoading && (
+          <div className="space-y-4">
+            {/* Provider Badge */}
+            {twinProvider && (
+              <div className="flex items-center gap-2">
+                {twinProvider === 'gemini' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-300 bg-teal-500/10 border border-teal-500/20 px-2.5 py-1 rounded-full">
+                    ✦ Powered by Gemini
+                  </span>
+                )}
+                {twinProvider === 'openai' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full">
+                    ⚡ Generated via backup model
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* Structured Sections — split on ## headers */}
+            {twinSimulation.split(/(?=^## )/m).filter(Boolean).map((section, idx) => {
+              const lines = section.trim().split('\n');
+              const headerMatch = lines[0]?.match(/^##\s+(.+)/);
+              const title = headerMatch ? headerMatch[1] : null;
+              const body = headerMatch ? lines.slice(1).join('\n').trim() : section.trim();
+
+              // Color scheme per section
+              const sectionStyles: Record<string, string> = {
+                'Mechanism of Action': 'border-blue-500/30 bg-blue-500/5',
+                'Patient-Specific Effects': 'border-teal-500/30 bg-teal-500/5',
+                'Interactions & Warnings': 'border-amber-500/30 bg-amber-500/5',
+                'Simulated Response Timeline': 'border-purple-500/30 bg-purple-500/5',
+              };
+              const style = title ? (sectionStyles[title] || 'border-white/10 bg-white/5') : 'border-white/10 bg-white/5';
+
+              return (
+                <div key={idx} className={`rounded-2xl border p-4 ${style}`}>
+                  {title && (
+                    <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                      {title.includes('Mechanism') && '🧬'}
+                      {title.includes('Patient') && '👤'}
+                      {title.includes('Interaction') && '⚠️'}
+                      {title.includes('Timeline') && '⏱️'}
+                      {title}
+                    </h3>
+                  )}
+                  <div className="text-sm text-gray-300 leading-relaxed whitespace-pre-wrap">
+                    {body.split('\n').map((line, i) => {
+                      // Bold markdown rendering
+                      const parts = line.split(/(\*\*[^*]+\*\*)/);
+                      return (
+                        <p key={i} className={line.startsWith('-') ? 'pl-2 my-0.5' : 'my-1'}>
+                          {parts.map((part, j) => {
+                            if (part.startsWith('**') && part.endsWith('**')) {
+                              return <strong key={j} className="text-white font-semibold">{part.slice(2, -2)}</strong>;
+                            }
+                            return <span key={j}>{part}</span>;
+                          })}
+                        </p>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
   if (vaultView === 'MULTIMODAL') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="Multi-Modal AI" subtitle="Vision + Bio + Text" icon={Microscope} onBack={() => setVaultView('MAIN')} /><div className="flex-1 overflow-y-auto p-6"><input type="file" onChange={handleFileUpload} className="mb-4"/><textarea className="w-full bg-white/10 p-2 rounded" value={mmTextInput} onChange={e=>setMmTextInput(e.target.value)} placeholder="Notes"/><button onClick={triggerMultiModal} className="mt-2 bg-blue-600 px-4 py-2 rounded">Analyze</button>{multiModalResult && <p className="mt-4 text-sm">{multiModalResult}</p>}</div></div>;
   if (vaultView === 'RESEARCH') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="ZK Research" subtitle="Earn Crypto" icon={Coins} onBack={() => setVaultView('MAIN')} /><div className="p-6"><p>Wallet: 1250 Credits</p></div></div>;
   if (vaultView === 'FEDERATED') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="Edge Bio-Net" subtitle="Federated Learning" icon={Network} onBack={() => setVaultView('MAIN')} /><div className="p-6"><button onClick={triggerFederatedLearning} className="bg-teal-600 px-4 py-2 rounded">Start Training</button><p className="mt-4">{federatedStatus}</p></div></div>;

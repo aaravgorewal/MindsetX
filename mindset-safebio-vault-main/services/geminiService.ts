@@ -569,30 +569,102 @@ Return ONLY valid JSON in this format:
 };
 
 // 9. Digital Twin Simulation
-export const simulateDigitalTwin = async (drugName: string, bioContext: string) => {
+export const simulateDigitalTwin = async (
+  drugName: string,
+  bioContext: string
+): Promise<{ text: string; provider: 'gemini' | 'openai' | 'offline-template' }> => {
   const ai = getAIClient();
-  const modelId = 'gemini-3-pro-preview';
 
   const systemPrompt = `
-You are a "Digital Twin Simulator". 
-You have access to a patient's virtual biological model (DNA, Metabolism, Vitals).
-The user will input a Drug Name or Lifestyle Change.
-You must SIMULATE the reaction based on Indian phenotypes or specific genetic markers (mock these if needed, e.g., CYP2C9 for metabolism).
-Output a structured simulation result:
-1. Efficacy Score (0-100%)
-2. Side Effect Risk (High/Med/Low) + Explanation
-3. Dosage Recommendation (Standard vs Adjusted)
+You are a "Digital Twin Simulator" — a virtual patient pharmacology engine.
+You have access to a patient's virtual biological model including their bio-profile context.
+The user will input a Drug Name.
+You must SIMULATE the drug's interaction with THIS specific patient's profile.
+
+Structure your response with these exact markdown headers:
+
+## Mechanism of Action
+Explain how this drug works at the molecular/receptor level. Be specific (e.g. COX-1/COX-2 inhibition, AMPK activation).
+
+## Patient-Specific Effects
+Based on the patient's bio-context, explain:
+- Expected therapeutic effects for their specific conditions/symptoms
+- Metabolic considerations (reference relevant CYP enzymes, e.g. CYP2C9, CYP3A4)
+- Efficacy Score (0-100%) with justification
+- Dosage recommendation (Standard vs Adjusted for this patient)
+
+## Interactions & Warnings
+- Contraindications given this patient's profile
+- Drug-drug interactions if they're on other medications
+- Side Effect Risk: High/Medium/Low with specific side effects listed
+- Red flags that require immediate medical attention
+
+## Simulated Response Timeline
+Show a timeline of expected physiological changes:
+- 0-30 min: [absorption phase]
+- 30-60 min: [onset of action]
+- 1-4 hrs: [peak effect]
+- 4-12 hrs: [sustained/declining]
+- 12-24 hrs: [clearance]
+
+Include estimated vital sign changes (heart rate, BP, temperature, blood glucose if relevant).
   `;
 
-  const response = await ai.models.generateContent({
-    model: modelId,
-    contents: `Simulate effect of: ${drugName}. Patient Context: ${bioContext}`,
-    config: {
-      systemInstruction: systemPrompt
-    }
-  });
+  const userPrompt = `Simulate the effect of: ${drugName}\nPatient Bio-Context: ${bioContext}`;
 
-  return extractCandidateText(response);
+  // Tier 1: Gemini (gemini-3.6-flash — only working model for this API key)
+  if (ai) {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.6-flash',
+        contents: userPrompt,
+        config: { systemInstruction: systemPrompt }
+      });
+
+      const text = extractCandidateText(response);
+      if (text) {
+        console.log("[simulateDigitalTwin] Tier 1 (Gemini) succeeded.");
+        return { text, provider: 'gemini' };
+      }
+      console.warn("[simulateDigitalTwin] Gemini returned empty text.");
+    } catch (geminiErr) {
+      console.warn("[simulateDigitalTwin] Tier 1 (Gemini) failed:", geminiErr);
+    }
+  }
+
+  // Tier 2: OpenAI gpt-4o-mini backup
+  try {
+    const openaiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || '';
+    if (openaiKey) {
+      const { OpenAI } = await import('openai');
+      const openai = new OpenAI({ apiKey: openaiKey, dangerouslyAllowBrowser: true });
+
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.7,
+        max_tokens: 1500
+      });
+
+      const text = completion.choices?.[0]?.message?.content?.trim();
+      if (text) {
+        console.log("[simulateDigitalTwin] Tier 2 (OpenAI) succeeded.");
+        return { text, provider: 'openai' };
+      }
+      console.warn("[simulateDigitalTwin] OpenAI returned empty content.");
+    } else {
+      console.warn("[simulateDigitalTwin] VITE_OPENAI_API_KEY not set, skipping OpenAI tier.");
+    }
+  } catch (openaiErr) {
+    console.warn("[simulateDigitalTwin] Tier 2 (OpenAI) failed:", openaiErr);
+  }
+
+  // No static template — wrong drug interaction info is dangerous.
+  // Throw so the UI can display a clear error state.
+  throw new Error("All AI providers failed. Unable to generate drug simulation — please try again later.");
 };
 
 // 10. Multi-Modal Diagnosis
