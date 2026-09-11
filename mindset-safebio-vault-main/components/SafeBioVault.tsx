@@ -84,7 +84,7 @@ const FEDERATED_NODES = [
     type: 'iPhone 15 Pro (You)',
     icon: Smartphone,
     isLocal: true,
-    records: '50 Biometrics (Local)',
+    records: '10 Biometrics (Local)',
     deltaWeight: '+0.014 Δw',
     positionClass: 'top-[3%] left-1/2 -translate-x-1/2',
     svgX: 500,
@@ -93,10 +93,10 @@ const FEDERATED_NODES = [
   {
     id: 'node-2',
     name: 'AIIMS Delhi',
-    type: 'Hospital Cluster',
+    type: 'Simulated Partition (Node 2)',
     icon: Building2,
     isLocal: false,
-    records: '1,200 Patient Cohort',
+    records: '10 Tensors (Simulated)',
     deltaWeight: '-0.009 Δw',
     positionClass: 'top-[15%] right-[2%] sm:right-[6%]',
     svgX: 830,
@@ -105,10 +105,10 @@ const FEDERATED_NODES = [
   {
     id: 'node-3',
     name: 'Apollo Bangalore',
-    type: 'Cardiology Lab',
+    type: 'Simulated Partition (Node 3)',
     icon: Activity,
     isLocal: false,
-    records: '840 ECG Streams',
+    records: '10 Tensors (Simulated)',
     deltaWeight: '+0.022 Δw',
     positionClass: 'bottom-[4%] right-[3%] sm:right-[7%]',
     svgX: 780,
@@ -117,10 +117,10 @@ const FEDERATED_NODES = [
   {
     id: 'node-4',
     name: 'Max Healthcare',
-    type: 'Endocrine Clinic',
+    type: 'Simulated Partition (Node 4)',
     icon: Database,
     isLocal: false,
-    records: '630 Diabetic Logs',
+    records: '10 Tensors (Simulated)',
     deltaWeight: '+0.007 Δw',
     positionClass: 'bottom-[4%] left-[3%] sm:left-[7%]',
     svgX: 220,
@@ -129,10 +129,10 @@ const FEDERATED_NODES = [
   {
     id: 'node-5',
     name: 'Wearable Mesh',
-    type: 'Apple Watch & Oura',
+    type: 'Simulated Partition (Node 5)',
     icon: Watch,
     isLocal: false,
-    records: '2,100 Time-series',
+    records: '10 Tensors (Simulated)',
     deltaWeight: '-0.012 Δw',
     positionClass: 'top-[15%] left-[2%] sm:left-[6%]',
     svgX: 170,
@@ -210,12 +210,13 @@ const SafeBioVault: React.FC = () => {
   
   // New Features State
   const [federatedStatus, setFederatedStatus] = useState('');
-  const [flAccuracy, setFlAccuracy] = useState<number>(87.2);
-  const [flPrevAccuracy, setFlPrevAccuracy] = useState<number>(86.8);
-  const [flRound, setFlRound] = useState<number>(14);
+  const [flAccuracy, setFlAccuracy] = useState<number>(86.0);
+  const [flPrevAccuracy, setFlPrevAccuracy] = useState<number>(84.0);
+  const [flRound, setFlRound] = useState<number>(0);
   const [isFlRunning, setIsFlRunning] = useState<boolean>(false);
   const [flStep, setFlStep] = useState<'idle' | 'local_training' | 'homomorphic' | 'aggregating' | 'completed'>('idle');
-  const [flStatusMessage, setFlStatusMessage] = useState<string>('System standby. Ready for Federated Round #15.');
+  const [flStatusMessage, setFlStatusMessage] = useState<string>('System standby. Ready for Federated Round #1.');
+  const [nodeUpdates, setNodeUpdates] = useState<Record<string, { deltaWeight?: string; localAccuracy?: number; recordsLabel?: string }>>({});
   const [zkpResult, setZkpResult] = useState('');
   const [auditLog, setAuditLog] = useState([
       { id: 'tx-101', time: 'Today, 10:30 AM', actor: 'Dr. Rao (Psychiatry)', action: 'Viewed Sentinel Report', hash: '0x7f2...b92' },
@@ -627,55 +628,82 @@ const SafeBioVault: React.FC = () => {
     }
   };
 
-  const triggerFederatedRound = () => {
+  const triggerFederatedRound = async () => {
     if (isFlRunning) return;
     setIsFlRunning(true);
     setFlStep('local_training');
-    setFlStatusMessage('Phase 1/3: Local on-device gradient calculation on private biometric tensors...');
+    setFlStatusMessage('Phase 1/3: Local on-device gradient calculation on private biometric tensors across 5 partitions...');
 
-    // Phase 1 -> 2: Homomorphic encryption
-    setTimeout(() => {
+    try {
+      const nextRound = flRound + 1;
+      const roundPromise = apiService.post('/federated/run-round', { round_number: nextRound });
+
+      // Phase 1 -> 2: Homomorphic encryption
+      await new Promise(res => setTimeout(res, 900));
       setFlStep('homomorphic');
       setFlStatusMessage('Phase 2/3: Applying differential privacy (ε=1.2) and Paillier homomorphic encryption to weight vectors...');
-    }, 1200);
 
-    // Phase 2 -> 3: Aggregating (transmitting to center)
-    setTimeout(() => {
+      // Phase 2 -> 3: Aggregating (transmitting to center)
+      await new Promise(res => setTimeout(res, 1100));
       setFlStep('aggregating');
       setFlStatusMessage('Phase 3/3: Transmitting encrypted weights to Global Model. Running FedAvg aggregation algorithm...');
-    }, 2400);
 
-    // Phase 3 -> 4: Completion and accuracy tick-up
-    setTimeout(() => {
+      const response = await roundPromise;
+      const data = response.data?.data;
+
+      await new Promise(res => setTimeout(res, 1000));
+
+      if (data) {
+        const nextAcc = data.global_accuracy;
+        const prevAcc = data.prev_accuracy ?? flAccuracy;
+        setFlPrevAccuracy(prevAcc);
+        setFlAccuracy(nextAcc);
+        setFlRound(data.round ?? nextRound);
+
+        if (Array.isArray(data.partitions)) {
+          const updates: Record<string, { deltaWeight?: string; localAccuracy?: number; recordsLabel?: string }> = {};
+          data.partitions.forEach((p: any) => {
+            updates[p.id] = {
+              deltaWeight: p.delta_weight,
+              localAccuracy: p.local_accuracy,
+              recordsLabel: p.records_label
+            };
+          });
+          setNodeUpdates(updates);
+        }
+
+        const deltaSign = data.accuracy_delta >= 0 ? '+' : '';
+        setFlStatusMessage(`Global model accuracy: ${prevAcc}% → ${nextAcc}% (${deltaSign}${data.accuracy_delta}% in Round #${data.round}).`);
+
+        setAuditLog(prev => [
+          {
+            id: `tx-${Date.now()}`,
+            time: 'Just Now',
+            actor: 'Edge Bio-Net',
+            action: `FedAvg Round #${data.round} Real Tensor Aggregation (Accuracy: ${nextAcc}%)`,
+            hash: `0x${Math.random().toString(16).substr(2, 8)}`
+          },
+          ...prev
+        ]);
+      }
       setFlStep('completed');
-      setFlPrevAccuracy(flAccuracy);
-      const nextAcc = +(flAccuracy + 0.4).toFixed(1);
-      setFlAccuracy(nextAcc);
-      const nextRound = flRound + 1;
-      setFlRound(nextRound);
-      setFlStatusMessage(`Global model accuracy improved: ${flAccuracy}% → ${nextAcc}% (Round #${nextRound} completed).`);
+    } catch (err: any) {
+      console.error('[triggerFederatedRound] Error:', err);
+      setFlStatusMessage(`Federated round execution error: ${err?.message || 'Server error'}`);
+      setFlStep('completed');
+    } finally {
       setIsFlRunning(false);
-
-      setAuditLog(prev => [
-        {
-          id: `tx-${Date.now()}`,
-          time: 'Just Now',
-          actor: 'Edge Bio-Net',
-          action: `FedAvg Round #${nextRound} Aggregation (Accuracy: ${nextAcc}%)`,
-          hash: `0x${Math.random().toString(16).substr(2, 8)}`
-        },
-        ...prev
-      ]);
-    }, 3800);
+    }
   };
 
   const resetFederatedDemo = () => {
     setIsFlRunning(false);
     setFlStep('idle');
-    setFlAccuracy(87.2);
-    setFlPrevAccuracy(86.8);
-    setFlRound(14);
-    setFlStatusMessage('System standby. Ready for Federated Round #15.');
+    setFlAccuracy(86.0);
+    setFlPrevAccuracy(84.0);
+    setFlRound(0);
+    setNodeUpdates({});
+    setFlStatusMessage('System standby. Ready for Federated Round #1.');
   };
 
   const triggerFederatedLearning = triggerFederatedRound;
@@ -1839,7 +1867,7 @@ const SafeBioVault: React.FC = () => {
                 </div>
 
                 <div className="text-[9px] font-mono text-gray-400 bg-black/30 px-1.5 py-0.5 rounded border border-white/5 truncate mb-1">
-                  {node.records}
+                  {nodeUpdates[node.id]?.recordsLabel || node.records}
                 </div>
 
                 {/* Dynamic Status / Weight indicator */}
@@ -1851,12 +1879,12 @@ const SafeBioVault: React.FC = () => {
                   )}
                   {flStep === 'local_training' && (
                     <span className="text-saffron-400 font-semibold animate-pulse flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-saffron-400 animate-ping" /> Epoch 3/3
+                      <span className="w-1.5 h-1.5 rounded-full bg-saffron-400 animate-ping" /> SGD Epoch 4/4
                     </span>
                   )}
                   {flStep === 'homomorphic' && (
                     <span className="text-teal-300 font-semibold flex items-center gap-1">
-                      <Lock size={9} /> {node.deltaWeight}
+                      <Lock size={9} /> {nodeUpdates[node.id]?.deltaWeight || node.deltaWeight}
                     </span>
                   )}
                   {flStep === 'aggregating' && (
@@ -1866,7 +1894,7 @@ const SafeBioVault: React.FC = () => {
                   )}
                   {flStep === 'completed' && (
                     <span className="text-emerald-400 font-semibold flex items-center gap-1">
-                      <Check size={9} /> Synced
+                      <Check size={9} /> {nodeUpdates[node.id]?.localAccuracy !== undefined ? `${nodeUpdates[node.id].localAccuracy}% Acc (${nodeUpdates[node.id]?.deltaWeight || node.deltaWeight})` : 'Synced'}
                     </span>
                   )}
                 </div>

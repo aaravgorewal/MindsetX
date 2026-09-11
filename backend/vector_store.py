@@ -239,6 +239,16 @@ def initialize_collections() -> None:
             logger.info(f"✓ Payload index 'student_id' ensured on '{COLLECTION_PHQ9_VECTORS}'")
         except Exception:
             pass  # Index may already exist
+
+        try:
+            client.create_payload_index(
+                collection_name=COLLECTION_PHQ9_VECTORS,
+                field_name="seed_data",
+                field_schema="bool"
+            )
+            logger.info(f"✓ Payload index 'seed_data' ensured on '{COLLECTION_PHQ9_VECTORS}'")
+        except Exception:
+            pass  # Index may already exist
     
     except Exception as e:
         logger.error(f"Failed to initialize collections: {e}")

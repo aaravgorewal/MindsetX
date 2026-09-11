@@ -345,6 +345,11 @@ class MultiModalLocalRequest(BaseModel):
     model: Optional[str] = Field("bakllava", description="Local Ollama vision model name")
 
 
+class FederatedRoundRequest(BaseModel):
+    """Federated learning round execution request"""
+    round_number: Optional[int] = Field(None, description="Round number to compute (e.g. 1, 2, ...)")
+
+
 # 3. Global Error Handling with Unified Response Schema
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -1620,6 +1625,33 @@ async def analyze_multimodal_local(request: MultiModalLocalRequest):
         return create_error_response(
             error=f"Local multi-modal analysis error: {str(e)}",
             message="Analysis failed"
+        )
+
+
+@app.post("/federated/run-round", tags=["Federated Learning"], response_model=UnifiedResponse)
+async def execute_federated_round(request: Optional[FederatedRoundRequest] = None):
+    """
+    Execute a real local Federated Averaging (FedAvg) consensus round:
+    - Pulls 50 real biometric records partitioned across 5 simulated nodes from Qdrant.
+    - Trains independent local SGDClassifier models on each edge partition.
+    - Applies FedAvg parameter aggregation (McMahan et al.) into a unified global model.
+    - Evaluates the merged global model on holdout biometric data to compute genuine accuracy and deltas.
+    - 100% on-device local computation — zero data leaks.
+    """
+    try:
+        from federated_service import run_federated_round
+        client = get_qdrant_client()
+        round_num = request.round_number if (request and request.round_number) else 1
+        result = run_federated_round(client, round_number=round_num)
+        return create_success_response(
+            data=result,
+            message=f"Federated Round #{result['round']} completed successfully"
+        )
+    except Exception as e:
+        logger.error(f"Error executing federated round: {e}", exc_info=True)
+        return create_error_response(
+            error=f"Federated round execution failed: {str(e)}",
+            message="Federated training error"
         )
 
 
