@@ -14,7 +14,7 @@ import {
   getSessionInfo,
   updateSessionActivity,
   formatSessionDuration,
-} from './sessionService';
+} from '../services/sessionService';
 
 /**
  * Session context value type

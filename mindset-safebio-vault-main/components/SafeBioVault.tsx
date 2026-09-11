@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, FileText, Activity, Lock, AlertTriangle, CheckCircle, Plus, Fingerprint, Dna, Database, Server, ScanFace, X, Pill, DownloadCloud, EyeOff, Link, Brain, Hexagon, ChevronLeft, MapPin, Wind, Thermometer, CloudRain, Send, Paperclip, Bot, Layers, Microscope, Coins, Zap, Network, FileKey, Eye, Globe, Siren, QrCode, Stethoscope, TriangleAlert, UserCheck, BellRing, Timer, FileCheck, Clock, Camera } from 'lucide-react';
+import { Shield, FileText, Activity, Lock, AlertTriangle, CheckCircle, Plus, Fingerprint, Dna, Database, Server, ScanFace, X, Pill, DownloadCloud, EyeOff, Link, Brain, Hexagon, ChevronLeft, MapPin, Wind, Thermometer, CloudRain, Send, Paperclip, Bot, Layers, Microscope, Coins, Zap, Network, FileKey, Eye, Globe, Siren, QrCode, Stethoscope, TriangleAlert, UserCheck, BellRing, Timer, FileCheck, Clock, Camera, ArrowUpRight } from 'lucide-react';
 import { DocumentItem, ChatMessage } from '../types';
 import { analyzeSDoH, runAgenticWorkflow, simulateDigitalTwin, extractDrugNameFromImage, analyzeMultiModal, runFederatedLearning, generateZKP, parseToFHIR } from '../services/geminiService';
 
@@ -1444,39 +1444,115 @@ const SafeBioVault: React.FC = () => {
           )}
       </div>
 
-      {/* Feature Grid - Replaces Horizontal Scroll */}
-      <h3 className="text-navy-900 font-bold text-sm uppercase tracking-widest mb-3 ml-1">Future Health Core</h3>
+      {/* Feature Grid - Future Health Core */}
+      <div className="flex items-center justify-between mb-3 px-1">
+          <h3 className="text-navy-900 font-bold text-xs uppercase tracking-widest flex items-center gap-2">
+              <span className="w-1.5 h-1.5 rounded-full bg-saffron-500"></span>
+              Future Health Core
+          </h3>
+          <span className="text-[10px] font-semibold text-slate-400 tracking-wider">6 MODULES</span>
+      </div>
       <div className="grid grid-cols-2 gap-3 mb-6">
-          <button onClick={() => setVaultView('AGENTIC')} className="bg-gradient-to-br from-indigo-600 to-purple-600 p-4 rounded-2xl text-white text-left shadow-lg hover:scale-[1.02] transition-transform">
-              <Bot size={24} className="mb-2 text-indigo-200" />
-              <div className="font-bold text-sm">Agentic AI</div>
-              <div className="text-[10px] opacity-70">Auto-Care Partner</div>
+          {/* Card 1: Agentic AI */}
+          <button 
+              onClick={() => setVaultView('AGENTIC')} 
+              className="bg-gradient-to-br from-saffron-50/50 via-white to-white border border-saffron-200/80 hover:border-saffron-400/80 p-4 rounded-2xl text-left shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group flex flex-col justify-between min-h-[116px] relative overflow-hidden"
+          >
+              <div className="flex items-start justify-between w-full mb-3">
+                  <div className="w-9 h-9 rounded-xl bg-saffron-500/10 border border-saffron-500/20 text-saffron-600 flex items-center justify-center group-hover:scale-105 transition-transform duration-200">
+                      <Bot size={18} strokeWidth={1.75} />
+                  </div>
+                  <ArrowUpRight size={14} className="text-saffron-400/80 group-hover:text-saffron-600 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
+              </div>
+              <div>
+                  <div className="text-[13px] font-semibold text-navy-900 tracking-tight group-hover:text-saffron-700 transition-colors">Agentic AI</div>
+                  <div className="text-[11px] font-medium text-slate-500 leading-tight mt-0.5">Auto-Care Partner</div>
+              </div>
           </button>
-          <button onClick={() => setVaultView('TWIN')} className="bg-gradient-to-br from-teal-600 to-emerald-600 p-4 rounded-2xl text-white text-left shadow-lg hover:scale-[1.02] transition-transform">
-              <Layers size={24} className="mb-2 text-teal-200" />
-              <div className="font-bold text-sm">Digital Twin</div>
-              <div className="text-[10px] opacity-70">Drug Simulation</div>
+
+          {/* Card 2: Digital Twin */}
+          <button 
+              onClick={() => setVaultView('TWIN')} 
+              className="bg-gradient-to-br from-navy-50/40 via-white to-white border border-navy-100 hover:border-saffron-300/80 p-4 rounded-2xl text-left shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group flex flex-col justify-between min-h-[116px] relative overflow-hidden"
+          >
+              <div className="flex items-start justify-between w-full mb-3">
+                  <div className="w-9 h-9 rounded-xl bg-navy-50 border border-navy-100 text-navy-800 group-hover:bg-saffron-500/10 group-hover:border-saffron-500/20 group-hover:text-saffron-600 transition-colors flex items-center justify-center group-hover:scale-105 transition-transform duration-200">
+                      <Layers size={18} strokeWidth={1.75} />
+                  </div>
+                  <ArrowUpRight size={14} className="text-slate-300 group-hover:text-saffron-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
+              </div>
+              <div>
+                  <div className="text-[13px] font-semibold text-navy-900 tracking-tight group-hover:text-saffron-700 transition-colors">Digital Twin</div>
+                  <div className="text-[11px] font-medium text-slate-500 leading-tight mt-0.5">Drug Simulation</div>
+              </div>
           </button>
-          <button onClick={() => setVaultView('MULTIMODAL')} className="bg-gradient-to-br from-blue-600 to-cyan-600 p-4 rounded-2xl text-white text-left shadow-lg hover:scale-[1.02] transition-transform">
-              <Microscope size={24} className="mb-2 text-blue-200" />
-              <div className="font-bold text-sm">Multi-Modal</div>
-              <div className="text-[10px] opacity-70">Vision + DNA + Text</div>
+
+          {/* Card 3: Multi-Modal */}
+          <button 
+              onClick={() => setVaultView('MULTIMODAL')} 
+              className="bg-white border border-slate-200/80 hover:border-saffron-300/80 p-4 rounded-2xl text-left shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group flex flex-col justify-between min-h-[116px] relative overflow-hidden"
+          >
+              <div className="flex items-start justify-between w-full mb-3">
+                  <div className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200/70 text-slate-700 group-hover:bg-saffron-500/10 group-hover:border-saffron-500/20 group-hover:text-saffron-600 transition-colors flex items-center justify-center group-hover:scale-105 transition-transform duration-200">
+                      <Microscope size={18} strokeWidth={1.75} />
+                  </div>
+                  <ArrowUpRight size={14} className="text-slate-300 group-hover:text-saffron-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
+              </div>
+              <div>
+                  <div className="text-[13px] font-semibold text-navy-900 tracking-tight group-hover:text-saffron-700 transition-colors">Multi-Modal</div>
+                  <div className="text-[11px] font-medium text-slate-500 leading-tight mt-0.5">Vision + DNA + Text</div>
+              </div>
           </button>
-          <button onClick={() => setVaultView('RESEARCH')} className="bg-gradient-to-br from-amber-600 to-orange-600 p-4 rounded-2xl text-white text-left shadow-lg hover:scale-[1.02] transition-transform">
-              <Coins size={24} className="mb-2 text-amber-200" />
-              <div className="font-bold text-sm">ZK Research</div>
-              <div className="text-[10px] opacity-70">Earn Crypto</div>
+
+          {/* Card 4: ZK Research */}
+          <button 
+              onClick={() => setVaultView('RESEARCH')} 
+              className="bg-white border border-slate-200/80 hover:border-saffron-300/80 p-4 rounded-2xl text-left shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group flex flex-col justify-between min-h-[116px] relative overflow-hidden"
+          >
+              <div className="flex items-start justify-between w-full mb-3">
+                  <div className="w-9 h-9 rounded-xl bg-saffron-500/10 border border-saffron-500/20 text-saffron-600 flex items-center justify-center group-hover:scale-105 transition-transform duration-200">
+                      <Coins size={18} strokeWidth={1.75} />
+                  </div>
+                  <ArrowUpRight size={14} className="text-slate-300 group-hover:text-saffron-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
+              </div>
+              <div>
+                  <div className="text-[13px] font-semibold text-navy-900 tracking-tight group-hover:text-saffron-700 transition-colors">ZK Research</div>
+                  <div className="text-[11px] font-medium text-slate-500 leading-tight mt-0.5">Earn Crypto</div>
+              </div>
           </button>
-          {/* NEW FEATURES */}
-          <button onClick={() => setVaultView('FEDERATED')} className="bg-gradient-to-br from-slate-600 to-slate-800 p-4 rounded-2xl text-white text-left shadow-lg hover:scale-[1.02] transition-transform">
-              <Network size={24} className="mb-2 text-slate-200" />
-              <div className="font-bold text-sm">Edge Bio-Net</div>
-              <div className="text-[10px] opacity-70">Federated Learning</div>
+
+          {/* Card 5: Edge Bio-Net */}
+          <button 
+              onClick={() => setVaultView('FEDERATED')} 
+              className="bg-white border border-slate-200/80 hover:border-saffron-300/80 p-4 rounded-2xl text-left shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group flex flex-col justify-between min-h-[116px] relative overflow-hidden"
+          >
+              <div className="flex items-start justify-between w-full mb-3">
+                  <div className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200/70 text-slate-700 group-hover:bg-saffron-500/10 group-hover:border-saffron-500/20 group-hover:text-saffron-600 transition-colors flex items-center justify-center group-hover:scale-105 transition-transform duration-200">
+                      <Network size={18} strokeWidth={1.75} />
+                  </div>
+                  <ArrowUpRight size={14} className="text-slate-300 group-hover:text-saffron-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
+              </div>
+              <div>
+                  <div className="text-[13px] font-semibold text-navy-900 tracking-tight group-hover:text-saffron-700 transition-colors">Edge Bio-Net</div>
+                  <div className="text-[11px] font-medium text-slate-500 leading-tight mt-0.5">Federated Learning</div>
+              </div>
           </button>
-          <button onClick={() => setVaultView('SECURITY')} className="bg-gradient-to-br from-red-700 to-pink-700 p-4 rounded-2xl text-white text-left shadow-lg hover:scale-[1.02] transition-transform">
-              <FileKey size={24} className="mb-2 text-pink-200" />
-              <div className="font-bold text-sm">Crypto Security</div>
-              <div className="text-[10px] opacity-70">Audit & ZKP</div>
+
+          {/* Card 6: Crypto Security */}
+          <button 
+              onClick={() => setVaultView('SECURITY')} 
+              className="bg-white border border-slate-200/80 hover:border-saffron-300/80 p-4 rounded-2xl text-left shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group flex flex-col justify-between min-h-[116px] relative overflow-hidden"
+          >
+              <div className="flex items-start justify-between w-full mb-3">
+                  <div className="w-9 h-9 rounded-xl bg-slate-50 border border-slate-200/70 text-slate-700 group-hover:bg-saffron-500/10 group-hover:border-saffron-500/20 group-hover:text-saffron-600 transition-colors flex items-center justify-center group-hover:scale-105 transition-transform duration-200">
+                      <FileKey size={18} strokeWidth={1.75} />
+                  </div>
+                  <ArrowUpRight size={14} className="text-slate-300 group-hover:text-saffron-500 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-all duration-200" />
+              </div>
+              <div>
+                  <div className="text-[13px] font-semibold text-navy-900 tracking-tight group-hover:text-saffron-700 transition-colors">Crypto Security</div>
+                  <div className="text-[11px] font-medium text-slate-500 leading-tight mt-0.5">Audit & ZKP</div>
+              </div>
           </button>
       </div>
 
