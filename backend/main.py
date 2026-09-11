@@ -7,6 +7,7 @@ import datetime
 import time
 import logging
 from typing import List, Optional, Dict, Any
+import httpx
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
@@ -80,15 +81,19 @@ app = FastAPI(
 # Configure CORS for React Frontend Communication
 # Development: Allow localhost with common frontend ports (Vite, Create React App)
 # Production: Specify exact frontend URLs from environment variables
-FRONTEND_URLS = os.getenv("FRONTEND_URLS", "http://localhost:3000,http://localhost:5173,http://localhost:8080").split(",")
+FRONTEND_URLS = os.getenv(
+    "FRONTEND_URLS",
+    "http://localhost:3000,http://localhost:3001,http://localhost:5173,http://localhost:8080,http://127.0.0.1:3000,http://127.0.0.1:3001,http://127.0.0.1:5173"
+).split(",")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=FRONTEND_URLS,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization", "Accept"],
-    expose_headers=["Content-Range", "X-Content-Range"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
     max_age=3600,
 )
 
@@ -329,6 +334,15 @@ class BioAnalyzeRequest(BaseModel):
     data_types: List[str] = Field(..., description="Which data types to analyze")
     include_recommendations: bool = Field(True, description="Include health recommendations")
     privacy_preserving: bool = Field(True, description="Use privacy-preserving analysis methods")
+
+
+class MultiModalLocalRequest(BaseModel):
+    """Multi-modal local analysis request using local Ollama vision model"""
+    image: Optional[str] = Field(None, description="Base64 encoded medical scan or image data")
+    mimeType: Optional[str] = Field("image/png", description="MIME type of image")
+    clinical_notes: Optional[str] = Field("", description="Unstructured clinical notes / patient history")
+    dna_context: Optional[str] = Field("", description="DNA or genetic marker profile context")
+    model: Optional[str] = Field("bakllava", description="Local Ollama vision model name")
 
 
 # 3. Global Error Handling with Unified Response Schema
@@ -1503,6 +1517,109 @@ async def manage_consent(request: BioConsentRequest):
         return create_error_response(
             error=f"Failed to manage consent: {str(e)}",
             message="Consent management failed"
+        )
+
+
+@app.post("/multimodal/analyze-local", tags=["MultiModal"], response_model=UnifiedResponse)
+async def analyze_multimodal_local(request: MultiModalLocalRequest):
+    """
+    Local multi-modal clinical diagnostic analysis using local Ollama vision model.
+    Processes medical scan (vision), clinical notes (text), and DNA context (bio).
+    100% on-device local execution — zero cloud API calls.
+    """
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    model_name = request.model or "bakllava"
+
+    # 1. Prepare visual data
+    clean_image = None
+    if request.image:
+        # Strip data URI prefix (e.g. data:image/png;base64,) if present
+        clean_image = request.image.split(",")[-1].strip()
+
+    # 2. Prompt crafted for high-accuracy local vision analysis (bakllava / LLaVA architecture)
+    notes_text = request.clinical_notes.strip() if request.clinical_notes else "No clinical history provided."
+    dna_text = request.dna_context.strip() if request.dna_context else "No genetic markers provided."
+
+    prompt = (
+        "A chat between a curious user and an artificial intelligence assistant specializing in multi-modal medical diagnostics.\n"
+        "USER: <image>\n"
+        "You are a Multi-Modal AI Diagnostician analyzing three patient data streams simultaneously: Vision (medical scan), Text (clinical history notes), and Bio (DNA/genomic markers).\n\n"
+        f"[Patient Clinical History Notes]\n{notes_text}\n\n"
+        f"[Patient DNA / Genetic Markers]\n{dna_text}\n\n"
+        "Please provide a comprehensive, structured clinical multi-modal diagnostic report with the following sections:\n"
+        "1. Visual Observations from the Scan: Detailed radiological observations of the scan image, anatomical structures, and any abnormal opacities, nodules, or variations.\n"
+        "2. Clinical History & Genomic Correlation: Cross-reference the visual findings with the clinical notes and DNA markers to detect correlations a human clinician might miss.\n"
+        "3. Holistic Risk Stratification & Recommended Next Steps: Objective risk assessment level (Low / Moderate / High) and prioritized diagnostic or clinical recommendations.\n"
+        "ASSISTANT:"
+    )
+
+    payload = {
+        "model": model_name,
+        "prompt": prompt,
+        "stream": False,
+        "options": {
+            "temperature": 0.2
+        }
+    }
+    if clean_image:
+        payload["images"] = [clean_image]
+
+    # 3. Call local Ollama API
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            res = await client.post(f"{OLLAMA_BASE_URL}/api/generate", json=payload)
+
+            if res.status_code != 200:
+                logger.error(f"Ollama returned HTTP {res.status_code}: {res.text}")
+                return create_error_response(
+                    error=f"Ollama server returned HTTP {res.status_code}: {res.text}",
+                    message="Local vision model analysis failed"
+                )
+
+            res_data = res.json()
+            analysis_text = res_data.get("response", "").strip()
+
+            if not analysis_text:
+                return create_error_response(
+                    error="Ollama model generated an empty response.",
+                    message="Local model generated no output"
+                )
+
+            duration_ns = res_data.get("total_duration", 0)
+            duration_sec = round(duration_ns / 1_000_000_000, 2) if duration_ns else 0.0
+
+            return create_success_response(
+                data={
+                    "analysis": analysis_text,
+                    "result": analysis_text,
+                    "text": analysis_text,
+                    "model": model_name,
+                    "provider": "ollama-local",
+                    "offline": True,
+                    "duration_seconds": duration_sec,
+                    "total_duration_ms": int(duration_ns / 1_000_000) if duration_ns else 0
+                },
+                message="Local multi-modal analysis completed successfully"
+            )
+
+    except httpx.ConnectError as e:
+        logger.error(f"Cannot connect to local Ollama instance: {e}")
+        return create_error_response(
+            error="Could not connect to local Ollama server at http://localhost:11434. "
+                  "Please ensure Ollama is running (`brew services start ollama` or `ollama serve`).",
+            message="Ollama connection failed"
+        )
+    except httpx.TimeoutException as e:
+        logger.error(f"Ollama inference timed out: {e}")
+        return create_error_response(
+            error="Ollama local model inference timed out (>120s). The model may still be loading or computing.",
+            message="Local inference timed out"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in analyze_multimodal_local: {e}", exc_info=True)
+        return create_error_response(
+            error=f"Local multi-modal analysis error: {str(e)}",
+            message="Analysis failed"
         )
 
 

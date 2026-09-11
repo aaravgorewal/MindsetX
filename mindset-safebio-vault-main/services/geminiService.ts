@@ -1278,46 +1278,30 @@ Include estimated vital sign changes as bullet points (e.g. "- **Heart Rate**: 7
   throw new Error("All AI providers failed. Unable to generate drug simulation — please try again later.");
 };
 
-// 10. Multi-Modal Diagnosis
+// 10. Multi-Modal Diagnosis (Local Ollama Vision Model)
 export const analyzeMultiModal = async (
   textHistory: string,
   imageBase64: string,
   mimeType: string,
   dnaContext: string
 ) => {
-  const ai = getAIClient();
-  const modelId = 'gemini-3-pro-preview'; // Multimodal
+  const backendBase = (import.meta as any).env?.VITE_BACKEND_URL || 'http://localhost:8000';
+  try {
+    const res = await axios.post(`${backendBase}/multimodal/analyze-local`, {
+      image: imageBase64,
+      mimeType: mimeType || 'image/png',
+      clinical_notes: textHistory,
+      dna_context: dnaContext
+    }, { timeout: 120000 });
 
-  const systemPrompt = `
-You are a Multi-Modal AI Diagnostician.
-You analyze three data streams simultaneously:
-1. VISION: Medical Scan (X-Ray/MRI/Skin).
-2. TEXT: Clinical Notes/History (Unstructured).
-3. BIO: DNA/Genetic Markers.
-
-First, perform "Reading the Unreadable" using NLP to extract key clinical terms from the notes.
-Then, cross-reference these inputs to find correlations that a human might miss.
-Example: "Vision shows lung nodule + DNA shows BRCA1 + History shows smoking = 99% High Risk."
-Provide a concise, high-accuracy holistic analysis.
-  `;
-
-  const response = await ai.models.generateContent({
-    model: modelId,
-    contents: {
-      parts: [
-        { text: `Clinical History (Notes): ${textHistory}\nDNA Context: ${dnaContext}` },
-        {
-          inlineData: {
-            mimeType: mimeType,
-            data: imageBase64
-          }
-        }
-      ]
-    },
-    config: { systemInstruction: systemPrompt }
-  });
-
-  return extractCandidateText(response);
+    if (res.data?.status === 'success') {
+      return res.data?.data?.analysis || res.data?.data?.result || res.data?.data?.text || 'Diagnostic analysis complete.';
+    }
+    throw new Error(res.data?.error || res.data?.message || 'Local multi-modal analysis failed.');
+  } catch (err: any) {
+    console.error('[analyzeMultiModal] Local analysis failed:', err);
+    throw new Error(err.response?.data?.error || err.message || 'Unable to connect to local vision model.');
+  }
 };
 
 // 11. Federated Learning Simulation (Edge-Bio)

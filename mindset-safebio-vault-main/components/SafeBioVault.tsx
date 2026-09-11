@@ -2,7 +2,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Shield, FileText, Activity, Lock, AlertTriangle, CheckCircle, Plus, Fingerprint, Dna, Database, Server, ScanFace, X, Pill, DownloadCloud, EyeOff, Link, Brain, Hexagon, ChevronLeft, MapPin, Wind, Thermometer, CloudRain, Send, Paperclip, Bot, Layers, Microscope, Coins, Zap, Network, FileKey, Eye, Globe, Siren, QrCode, Stethoscope, TriangleAlert, UserCheck, BellRing, Timer, FileCheck, Clock, Camera, ArrowUpRight, Wrench, Sparkles, Copy, Check, RefreshCw, TrendingUp, AlertCircle, Smartphone, Building2, Watch, Cpu, Play, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { DocumentItem, ChatMessage, AgenticStep, AgenticWorkflowResult } from '../types';
-import { analyzeSDoH, runAgenticWorkflow, simulateDigitalTwin, extractDrugNameFromImage, analyzeMultiModal, runFederatedLearning, generateZKP, parseToFHIR } from '../services/geminiService';
+import { apiService } from '../services/apiService';
+import { analyzeSDoH, runAgenticWorkflow, simulateDigitalTwin, extractDrugNameFromImage, runFederatedLearning, generateZKP, parseToFHIR } from '../services/geminiService';
 
 // --- SUB-COMPONENTS DEFINED OUTSIDE TO PREVENT RE-RENDER ISSUES ---
 
@@ -200,6 +201,12 @@ const SafeBioVault: React.FC = () => {
   const twinFileInputRef = useRef<HTMLInputElement>(null);
   const [multiModalResult, setMultiModalResult] = useState('');
   const [mmTextInput, setMmTextInput] = useState('');
+  const [mmDnaInput, setMmDnaInput] = useState('BRCA1 variant detected (pathogenic), HLA-B*5701 negative');
+  const [isMmLoading, setIsMmLoading] = useState(false);
+  const [mmError, setMmError] = useState('');
+  const [mmDuration, setMmDuration] = useState<number | null>(null);
+  const [mmCopied, setMmCopied] = useState(false);
+  const mmFileInputRef = useRef<HTMLInputElement>(null);
   
   // New Features State
   const [federatedStatus, setFederatedStatus] = useState('');
@@ -582,15 +589,42 @@ const SafeBioVault: React.FC = () => {
   };
 
   const triggerMultiModal = async () => {
-      if(!attachedFile || !mmTextInput) return;
-      setIsSdohAnalyzing(true);
-      try {
-          const base64Data = attachedFile.preview.split(',')[1];
-          const result = await analyzeMultiModal(mmTextInput, base64Data, attachedFile.file.type, bioProfile);
-          setMultiModalResult(result);
-          setAttachedFile(null); // Clear after use
-      } catch (e) { console.error(e); }
-      setIsSdohAnalyzing(false);
+    if (!attachedFile && !mmTextInput.trim()) {
+      setMmError('Please attach an imaging scan (X-Ray, MRI, or photo) or enter clinical notes to analyze.');
+      return;
+    }
+    setIsMmLoading(true);
+    setMmError('');
+    setMultiModalResult('');
+    setMmDuration(null);
+    const startTime = performance.now();
+
+    try {
+      const base64Data = attachedFile?.preview ? attachedFile.preview.split(',')[1] : null;
+      const mimeType = attachedFile?.file?.type || 'image/png';
+      
+      const response = await apiService.post('/multimodal/analyze-local', {
+        image: base64Data,
+        mimeType: mimeType,
+        clinical_notes: mmTextInput,
+        dna_context: mmDnaInput || bioProfile
+      }, { timeout: 120000 });
+
+      const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
+      setMmDuration(parseFloat(elapsed));
+
+      if (response.data?.status === 'success') {
+        const textResult = response.data?.data?.analysis || response.data?.data?.result || response.data?.data?.text || 'Diagnostic analysis complete.';
+        setMultiModalResult(textResult);
+      } else {
+        throw new Error(response.data?.error || response.data?.message || 'Local multi-modal analysis failed.');
+      }
+    } catch (e: any) {
+      console.error('[triggerMultiModal] Error:', e);
+      setMmError(e?.response?.data?.error || e?.message || 'Failed to process multi-modal scan locally. Ensure Ollama is running.');
+    } finally {
+      setIsMmLoading(false);
+    }
   };
 
   const triggerFederatedRound = () => {
@@ -1321,7 +1355,240 @@ const SafeBioVault: React.FC = () => {
       </div>
     </div>
   );
-  if (vaultView === 'MULTIMODAL') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="Multi-Modal AI" subtitle="Vision + Bio + Text" icon={Microscope} onBack={() => setVaultView('MAIN')} /><div className="flex-1 overflow-y-auto p-6"><input type="file" onChange={handleFileUpload} className="mb-4"/><textarea className="w-full bg-white/10 p-2 rounded" value={mmTextInput} onChange={e=>setMmTextInput(e.target.value)} placeholder="Notes"/><button onClick={triggerMultiModal} className="mt-2 bg-blue-600 px-4 py-2 rounded">Analyze</button>{multiModalResult && <p className="mt-4 text-sm">{multiModalResult}</p>}</div></div>;
+  if (vaultView === 'MULTIMODAL') return (
+    <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative">
+      <VaultHeader 
+        title="Multi-Modal AI" 
+        subtitle="Local Vision + Genomic Bio + Clinical Text Analysis" 
+        icon={Microscope} 
+        onBack={() => setVaultView('MAIN')} 
+      />
+
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 no-scrollbar">
+        {/* Honest Offline Badge (Item 4) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 text-emerald-300">
+          <div className="flex items-center gap-2.5 font-medium text-xs sm:text-sm">
+            <span className="flex h-2.5 w-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="flex items-center gap-1.5">
+              <Lock size={15} className="text-emerald-400" />
+              🔒 Processed Locally — No Cloud API Used
+            </span>
+          </div>
+          <span className="text-[11px] px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-200 border border-emerald-500/30 font-mono flex items-center gap-1">
+            <Cpu size={12} /> Ollama • bakllava
+          </span>
+        </div>
+
+        {/* Input Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Left Column: Vision Scan + DNA Context */}
+          <div className="space-y-4">
+            {/* Visual Scan Upload Box */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-5 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-gray-300 flex items-center gap-2 uppercase tracking-wider">
+                  <Camera size={15} className="text-teal-400" />
+                  1. Medical Scan (Vision)
+                </label>
+                <span className="text-[11px] text-gray-400">Chest X-Ray, MRI, CT, Dermatoscopy</span>
+              </div>
+
+              <input 
+                type="file" 
+                ref={mmFileInputRef}
+                accept="image/*"
+                onChange={handleFileUpload} 
+                className="hidden" 
+                id="multimodal-file-input"
+              />
+
+              {attachedFile ? (
+                <div className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/15">
+                  {attachedFile.preview ? (
+                    <img 
+                      src={attachedFile.preview} 
+                      alt="Scan Preview" 
+                      className="w-16 h-16 rounded-lg object-cover border border-white/20 flex-none bg-black" 
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-lg bg-black/40 border border-white/10 flex items-center justify-center flex-none">
+                      <FileText size={24} className="text-teal-400" />
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-white truncate">{attachedFile.file.name}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{(attachedFile.file.size / 1024).toFixed(1)} KB • {attachedFile.file.type}</p>
+                    <span className="inline-block mt-1 text-[10px] text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                      Scan Loaded
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAttachedFile(null)}
+                    className="p-1.5 hover:bg-white/10 rounded-lg text-gray-400 hover:text-white transition-colors cursor-pointer"
+                    title="Remove scan"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => mmFileInputRef.current?.click()}
+                  className="w-full py-7 px-4 border-2 border-dashed border-white/15 hover:border-teal-500/50 rounded-xl bg-white/[0.02] hover:bg-white/[0.05] transition-all flex flex-col items-center justify-center gap-2 group cursor-pointer"
+                >
+                  <div className="p-3 bg-teal-500/10 text-teal-400 rounded-full group-hover:scale-110 transition-transform">
+                    <Microscope size={24} />
+                  </div>
+                  <div className="text-center">
+                    <p className="text-sm font-medium text-gray-200">Click to upload medical scan</p>
+                    <p className="text-xs text-gray-400 mt-0.5">PNG, JPG, DICOM preview up to 25MB</p>
+                  </div>
+                </button>
+              )}
+            </div>
+
+            {/* Genomic / DNA Context */}
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-5 space-y-2.5">
+              <label className="text-xs font-semibold text-gray-300 flex items-center gap-2 uppercase tracking-wider">
+                <Dna size={15} className="text-purple-400" />
+                2. Genomic / DNA Profile Context
+              </label>
+              <input
+                type="text"
+                value={mmDnaInput}
+                onChange={(e) => setMmDnaInput(e.target.value)}
+                placeholder="e.g. BRCA1 pathogenic variant, CYP2C19 *2/*3, HLA-B*5701"
+                className="w-full bg-black/40 border border-white/10 focus:border-purple-500/50 rounded-xl px-3.5 py-2.5 text-xs text-purple-200 placeholder-gray-500 focus:outline-none transition-colors font-mono"
+              />
+              <p className="text-[11px] text-gray-400">Cross-referenced with on-device BioVault consent logs.</p>
+            </div>
+          </div>
+
+          {/* Right Column: Clinical Notes (Text) */}
+          <div className="space-y-4">
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-4 sm:p-5 flex flex-col h-full space-y-2.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-gray-300 flex items-center gap-2 uppercase tracking-wider">
+                  <FileText size={15} className="text-amber-400" />
+                  3. Clinical History & Unstructured Notes
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setMmTextInput("45-year-old male, chronic smoker (20 pack-years), presents with persistent nocturnal cough for 4 weeks. Mild hemoptysis noted yesterday. Low-grade evening fever and unexplained fatigue. No prior tuberculosis history.")}
+                  className="text-[11px] text-teal-400 hover:text-teal-300 underline cursor-pointer"
+                >
+                  Insert Sample
+                </button>
+              </div>
+
+              <textarea
+                value={mmTextInput}
+                onChange={(e) => setMmTextInput(e.target.value)}
+                placeholder="Enter patient history, physical examination notes, reported symptoms, duration, and lifestyle factors..."
+                rows={7}
+                className="w-full flex-1 bg-black/40 border border-white/10 focus:border-teal-500/50 rounded-xl p-3 text-xs sm:text-sm text-gray-100 placeholder-gray-500 focus:outline-none transition-colors resize-none leading-relaxed"
+              />
+
+              {/* Action Button */}
+              <button
+                type="button"
+                onClick={triggerMultiModal}
+                disabled={isMmLoading || (!attachedFile && !mmTextInput.trim())}
+                className={`w-full py-3 px-4 rounded-xl font-medium text-sm flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  isMmLoading
+                    ? 'bg-teal-600/50 text-teal-200 cursor-wait'
+                    : (!attachedFile && !mmTextInput.trim())
+                      ? 'bg-white/10 text-gray-500 cursor-not-allowed'
+                      : 'bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white shadow-lg shadow-teal-900/30 active:scale-[0.99]'
+                }`}
+              >
+                {isMmLoading ? (
+                  <>
+                    <RefreshCw size={16} className="animate-spin text-teal-200" />
+                    <span>Analyzing locally on Ollama (bakllava)...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={16} />
+                    <span>Run Multi-Modal Diagnostic Analysis</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Loading State Banner (Item 3) */}
+        {isMmLoading && (
+          <div className="p-4 rounded-2xl bg-teal-500/10 border border-teal-500/30 flex items-center gap-3.5 text-teal-200 animate-pulse">
+            <RefreshCw size={20} className="animate-spin text-teal-400 shrink-0" />
+            <div className="text-xs sm:text-sm">
+              <p className="font-semibold text-teal-300">Analyzing locally on device — this may take a moment...</p>
+              <p className="text-teal-400/80 text-xs mt-0.5">Running local vision model (bakllava) over unified memory. Zero data is leaving your Mac.</p>
+            </div>
+          </div>
+        )}
+
+        {/* Error Alert */}
+        {mmError && (
+          <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/30 flex items-start gap-3 text-red-200">
+            <AlertTriangle size={18} className="text-red-400 shrink-0 mt-0.5" />
+            <div className="text-xs sm:text-sm">
+              <p className="font-semibold text-red-300">Local Multi-Modal Analysis Failed</p>
+              <p className="text-red-200/90 mt-0.5">{mmError}</p>
+            </div>
+          </div>
+        )}
+
+        {/* Results Container */}
+        {multiModalResult && (
+          <div className="space-y-3">
+            {/* Clinical AI Decision Support Disclaimer */}
+            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-amber-200/90 text-xs sm:text-sm">
+              <AlertTriangle size={18} className="text-amber-400 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                <span className="font-semibold text-amber-300">AI-assisted decision support only — not a clinical diagnosis.</span>{' '}
+                <span>This runs on a small local model for privacy and demo purposes; always confirm findings with a licensed medical professional.</span>
+              </div>
+            </div>
+
+            <div className="bg-white/5 border border-white/10 rounded-2xl p-5 sm:p-6 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={18} className="text-emerald-400" />
+                  <h3 className="font-semibold text-sm sm:text-base text-white">Multi-Modal Diagnostic Synthesis</h3>
+                </div>
+              <div className="flex items-center gap-2">
+                {mmDuration !== null && (
+                  <span className="text-[11px] px-2.5 py-1 rounded-full bg-white/10 text-gray-300 font-mono flex items-center gap-1">
+                    <Clock size={12} className="text-teal-400" /> {mmDuration}s
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(multiModalResult);
+                    setMmCopied(true);
+                    setTimeout(() => setMmCopied(false), 2000);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/15 text-xs text-gray-300 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  {mmCopied ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                  <span>{mmCopied ? 'Copied' : 'Copy'}</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="text-xs sm:text-sm text-gray-200 whitespace-pre-wrap leading-relaxed space-y-2 font-sans bg-black/30 p-4 rounded-xl border border-white/5">
+              {multiModalResult}
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
+    </div>
+  );
   if (vaultView === 'RESEARCH') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="ZK Research" subtitle="Earn Crypto" icon={Coins} onBack={() => setVaultView('MAIN')} /><div className="p-6"><p>Wallet: 1250 Credits</p></div></div>;
   if (vaultView === 'FEDERATED') return (
     <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative">
