@@ -54,7 +54,16 @@ class Archivist:
         """
         try:
             import uuid as _uuid
-            point_id = abs(hash(f"{user_id}_{session_id}_{datetime.now().isoformat()}")) % (10**8)
+            # Ensure collection exists before storing
+            if not self.client.collection_exists(self.collection_name):
+                from qdrant_client.models import VectorParams, Distance
+                self.client.create_collection(
+                    collection_name=self.collection_name,
+                    vectors_config=VectorParams(size=len(embedding), distance=Distance.COSINE),
+                )
+                logger.info(f"📦 Created collection '{self.collection_name}' (size={len(embedding)})")
+
+            point_id = str(_uuid.uuid4())
             payload = {
                 "user_id": user_id,
                 "session_id": session_id,
@@ -62,6 +71,9 @@ class Archivist:
                 "timestamp": datetime.now().isoformat(),
                 **metadata
             }
+
+            print(f"📦 [Archivist.store_message] Storing msg='{message[:40]}' for user_id='{user_id}' session_id='{session_id}' (point_id={point_id})")
+            logger.info(f"📦 [Archivist.store_message] Storing msg='{message[:40]}' for user_id='{user_id}' session_id='{session_id}' (point_id={point_id})")
 
             self.client.upsert(
                 collection_name=self.collection_name,
@@ -72,11 +84,13 @@ class Archivist:
                 )],
             )
             
-            logger.info(f"✅ Message stored for user {user_id} in session {session_id}")
+            print(f"✅ [Archivist.store_message] Stored point {point_id} in '{self.collection_name}' successfully")
+            logger.info(f"✅ [Archivist.store_message] Stored point {point_id} in '{self.collection_name}' successfully")
             return True
             
         except Exception as e:
-            logger.error(f"❌ Error storing message: {e}")
+            print(f"❌ [Archivist.store_message] Error storing message: {e}")
+            logger.error(f"❌ [Archivist.store_message] Error storing message: {e}")
             return False
     
     async def retrieve_similar_messages(
@@ -86,7 +100,7 @@ class Archivist:
         limit: int = 5
     ) -> List[Dict[str, Any]]:
         """
-        Retrieve similar past messages
+        Retrieve similar past messages for the given user.
         
         Args:
             embedding: Query embedding vector
@@ -97,7 +111,12 @@ class Archivist:
             List of similar messages with metadata
         """
         try:
-            # qdrant-client 1.x: use query_points (replaces search)
+            if not self.client.collection_exists(self.collection_name):
+                print(f"🔍 [Archivist.retrieve] Collection '{self.collection_name}' does not exist yet. Returning []")
+                logger.info(f"🔍 [Archivist.retrieve] Collection '{self.collection_name}' does not exist yet. Returning []")
+                return []
+
+            # qdrant-client 1.x: use query_points
             results = self.client.query_points(
                 collection_name=self.collection_name,
                 query=embedding,
@@ -122,12 +141,26 @@ class Archivist:
                 for result in results
             ]
 
+            print(f"🔍 [Archivist.retrieve] user_id='{user_id}' -> found {len(messages)} matching records in '{self.collection_name}'")
+            for idx, m in enumerate(messages):
+                print(f"   [{idx}] score={m['score']:.4f} msg='{m['message'][:40]}...'")
             logger.info(f"📚 Retrieved {len(messages)} similar messages for user {user_id}")
             return messages
 
         except Exception as e:
-            logger.error(f"❌ Error retrieving messages: {e}")
+            print(f"❌ [Archivist.retrieve] Error retrieving messages: {e}")
+            logger.error(f"❌ [Archivist.retrieve] Error retrieving messages: {e}")
             return []
+
+    def get_collection_points_count(self) -> int:
+        """Return total number of points in the chat memory collection."""
+        try:
+            if self.client.collection_exists(self.collection_name):
+                info = self.client.get_collection(self.collection_name)
+                return info.points_count or 0
+            return 0
+        except Exception:
+            return 0
     
     async def get_user_history(
         self,
