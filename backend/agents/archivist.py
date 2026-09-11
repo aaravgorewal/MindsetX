@@ -6,7 +6,7 @@ Manages chat history, memory, and historical data retrieval
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from qdrant_client.models import Filter, FieldCondition, MatchValue
+from qdrant_client.models import Filter, FieldCondition, MatchValue, PointStruct
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +53,8 @@ class Archivist:
             bool: Success status
         """
         try:
-            point_id = hash(f"{user_id}_{session_id}_{datetime.now().isoformat()}") % (10**8)
+            import uuid as _uuid
+            point_id = abs(hash(f"{user_id}_{session_id}_{datetime.now().isoformat()}")) % (10**8)
             payload = {
                 "user_id": user_id,
                 "session_id": session_id,
@@ -61,14 +62,14 @@ class Archivist:
                 "timestamp": datetime.now().isoformat(),
                 **metadata
             }
-            
+
             self.client.upsert(
                 collection_name=self.collection_name,
-                points=[{
-                    "id": point_id,
-                    "vector": embedding,
-                    "payload": payload
-                }]
+                points=[PointStruct(
+                    id=point_id,
+                    vector=embedding,
+                    payload=payload,
+                )],
             )
             
             logger.info(f"✅ Message stored for user {user_id} in session {session_id}")
@@ -96,9 +97,10 @@ class Archivist:
             List of similar messages with metadata
         """
         try:
-            results = self.client.search(
+            # qdrant-client 1.x: use query_points (replaces search)
+            results = self.client.query_points(
                 collection_name=self.collection_name,
-                query_vector=embedding,
+                query=embedding,
                 query_filter=Filter(
                     must=[
                         FieldCondition(
@@ -107,9 +109,9 @@ class Archivist:
                         )
                     ]
                 ),
-                limit=limit
-            )
-            
+                limit=limit,
+            ).points
+
             messages = [
                 {
                     "score": result.score,
@@ -119,10 +121,10 @@ class Archivist:
                 }
                 for result in results
             ]
-            
+
             logger.info(f"📚 Retrieved {len(messages)} similar messages for user {user_id}")
             return messages
-            
+
         except Exception as e:
             logger.error(f"❌ Error retrieving messages: {e}")
             return []

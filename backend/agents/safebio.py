@@ -32,3 +32,7 @@ class SafeBioAgent:
             return "moderate_bio_risk"
         else:
             return "low_bio_risk"
+
+
+# Alias for backward compatibility
+SafeBioVaultAgent = SafeBioAgent
