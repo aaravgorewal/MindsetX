@@ -1,6 +1,7 @@
 
-import React, { useEffect, useRef, useState } from 'react';
-import { Mic, MicOff, PhoneOff, Video, Star, ChevronLeft, CheckCircle, Brain, X, Calendar as CalendarIcon, ExternalLink, RefreshCw, User, Briefcase } from 'lucide-react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
+import { Mic, MicOff, PhoneOff, Video, Star, ChevronLeft, CheckCircle, Brain, X, Calendar as CalendarIcon, ExternalLink, RefreshCw, User, Briefcase, QrCode, ShieldCheck } from 'lucide-react';
+import { QRCodeSVG } from 'qrcode.react';
 import { GoogleGenAI, LiveServerMessage } from '@google/genai';
 
 interface LiveSessionProps {
@@ -259,8 +260,10 @@ const GeminiLiveSession = ({ onEnd }: { onEnd: () => void }) => {
 export default function LiveSession({ onEnd }: LiveSessionProps) {
   const [view, setView] = useState<'DIRECTORY' | 'AI_SESSION' | 'SCHEDULE'>('DIRECTORY');
   const [selectedSpecialist, setSelectedSpecialist] = useState<Specialist | null>(null);
-  const [bookingStep, setBookingStep] = useState<'NONE' | 'DATE' | 'CONFIRM'>('NONE');
-  const [selectedDate, setSelectedDate] = useState<string>('');
+  const [bookingStep, setBookingStep] = useState<'NONE' | 'DATE' | 'PAYMENT' | 'CONFIRM'>('NONE');
+  const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('');
+  const [selectedBookingDate, setSelectedBookingDate] = useState<Date>(new Date());
+  const [paymentConfirmed, setPaymentConfirmed] = useState(false);
   
   // Google Calendar State
   const [isCalendarConnected, setIsCalendarConnected] = useState(false);
@@ -268,26 +271,92 @@ export default function LiveSession({ onEnd }: LiveSessionProps) {
   const [scheduleMode, setScheduleMode] = useState<'USER' | 'CREATOR'>('USER');
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
 
+  // --- Date picker helpers ---
+  const bookingDates = useMemo(() => {
+    const dates: Date[] = [];
+    const now = new Date();
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(now);
+      d.setDate(now.getDate() + i);
+      d.setHours(0, 0, 0, 0);
+      dates.push(d);
+    }
+    return dates;
+  }, []);
+
+  const formatDateLabel = (d: Date, idx: number): string => {
+    if (idx === 0) return 'Today';
+    if (idx === 1) return 'Tomorrow';
+    return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+  };
+
+  const formatDateWeekday = (d: Date): string =>
+    d.toLocaleDateString('en-IN', { weekday: 'short' });
+
+  const TIME_SLOTS = ['10:00 AM', '02:00 PM', '04:30 PM', '06:00 PM', '08:00 PM', '09:30 PM'];
+
+  const isTimeSlotPast = (slot: string): boolean => {
+    // Only disable past slots for today
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const selDate = new Date(selectedBookingDate);
+    selDate.setHours(0, 0, 0, 0);
+    if (selDate.getTime() !== today.getTime()) return false;
+
+    const now = new Date();
+    // Parse slot like "10:00 AM" or "02:00 PM"
+    const match = slot.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (!match) return false;
+    let hours = parseInt(match[1], 10);
+    const mins = parseInt(match[2], 10);
+    const ampm = match[3].toUpperCase();
+    if (ampm === 'PM' && hours !== 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+
+    const slotTime = new Date();
+    slotTime.setHours(hours, mins, 0, 0);
+    return now > slotTime;
+  };
+
+  const formatBookingDateFull = (d: Date): string =>
+    d.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+
+  const buildUpiLink = (): string => {
+    const vpa = (import.meta as any).env?.VITE_UPI_ID || '';
+    if (!vpa || !selectedSpecialist) return '';
+    const payeeName = encodeURIComponent('MindSetX');
+    const amount = selectedSpecialist.price.toFixed(2);
+    const note = encodeURIComponent(`MindSetX-${selectedSpecialist.name}-${selectedTimeSlot}`);
+    return `upi://pay?pa=${encodeURIComponent(vpa)}&pn=${payeeName}&am=${amount}&cu=INR&tn=${note}`;
+  };
+
   const handleSpecialistClick = (specialist: Specialist) => {
     if (specialist.role === 'AI Companion') {
       setView('AI_SESSION');
     } else {
       setSelectedSpecialist(specialist);
       setBookingStep('DATE');
+      setSelectedTimeSlot('');
+      setSelectedBookingDate(new Date());
+      setPaymentConfirmed(false);
     }
   };
 
-  const confirmBooking = () => {
+  const proceedToPayment = () => {
+    setBookingStep('PAYMENT');
+    setPaymentConfirmed(false);
+  };
+
+  const finalizeBooking = () => {
     setBookingStep('CONFIRM');
-    
-    // Simulate adding to system state
     if (selectedSpecialist) {
+        const dateLabel = formatBookingDateFull(selectedBookingDate);
         const newEvent: CalendarEvent = {
             id: Date.now().toString(),
             title: `Session with ${selectedSpecialist.name}`,
             attendee: selectedSpecialist.name,
-            date: 'Tomorrow',
-            time: selectedDate,
+            date: dateLabel,
+            time: selectedTimeSlot,
             type: 'User',
             meetLink: 'https://meet.google.com/abc-def-ghi'
         };
@@ -311,7 +380,7 @@ export default function LiveSession({ onEnd }: LiveSessionProps) {
   };
 
   const addToGoogleCalendar = () => {
-      if (!selectedSpecialist || !selectedDate) return;
+      if (!selectedSpecialist || !selectedTimeSlot) return;
       
       const title = encodeURIComponent(`Session with ${selectedSpecialist.name}`);
       const details = encodeURIComponent(`MindSet X Live Therapy Session. Specialist: ${selectedSpecialist.role}`);
@@ -508,7 +577,7 @@ export default function LiveSession({ onEnd }: LiveSessionProps) {
        {/* Booking Modal */}
        {selectedSpecialist && bookingStep !== 'NONE' && (
            <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4">
-               <div className="bg-charcoal border border-white/10 w-full max-w-md rounded-3xl p-6 shadow-2xl animate-slide-in-up text-white">
+               <div className="bg-charcoal border border-white/10 w-full max-w-md rounded-3xl p-6 shadow-2xl animate-slide-in-up text-white max-h-[90vh] overflow-y-auto no-scrollbar">
                    {bookingStep === 'DATE' && (
                        <>
                            <div className="flex justify-between items-center mb-6">
@@ -527,25 +596,141 @@ export default function LiveSession({ onEnd }: LiveSessionProps) {
                                </div>
                            </div>
 
+                           {/* Date Selector */}
+                           <h3 className="text-sm font-bold text-gray-500 uppercase mb-3">Select Date</h3>
+                           <div className="flex gap-2 mb-5 overflow-x-auto no-scrollbar pb-1">
+                               {bookingDates.map((d, idx) => {
+                                   const isSelected = d.toDateString() === selectedBookingDate.toDateString();
+                                   return (
+                                       <button
+                                           key={idx}
+                                           onClick={() => { setSelectedBookingDate(d); setSelectedTimeSlot(''); }}
+                                           className={`flex flex-col items-center min-w-[72px] py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex-none ${
+                                               isSelected
+                                                   ? 'bg-saffron-500 text-white border-saffron-500 shadow-md'
+                                                   : 'border-white/10 text-gray-400 hover:border-white/30 bg-white/5'
+                                           }`}
+                                       >
+                                           <span className="text-[10px] uppercase opacity-70">{formatDateWeekday(d)}</span>
+                                           <span className="mt-0.5">{formatDateLabel(d, idx)}</span>
+                                       </button>
+                                   );
+                               })}
+                           </div>
+
+                           {/* Time Slot Grid */}
                            <h3 className="text-sm font-bold text-gray-500 uppercase mb-3">Select Time Slot</h3>
                            <div className="grid grid-cols-3 gap-3 mb-6">
-                               {['10:00 AM', '02:00 PM', '04:30 PM', '06:00 PM', '08:00 PM', '09:30 PM'].map(time => (
-                                   <button 
-                                     key={time} 
-                                     onClick={() => setSelectedDate(time)}
-                                     className={`py-3 rounded-xl border text-sm font-bold transition-all ${selectedDate === time ? 'bg-saffron-500 text-white border-saffron-500 shadow-md' : 'border-white/10 text-gray-400 hover:border-white/30 bg-white/5'}`}
-                                   >
-                                       {time}
-                                   </button>
-                               ))}
+                               {TIME_SLOTS.map(time => {
+                                   const past = isTimeSlotPast(time);
+                                   const isSelected = selectedTimeSlot === time;
+                                   return (
+                                       <button 
+                                         key={time} 
+                                         onClick={() => !past && setSelectedTimeSlot(time)}
+                                         disabled={past}
+                                         className={`py-3 rounded-xl border text-sm font-bold transition-all ${
+                                             past
+                                                 ? 'border-white/5 text-gray-600 bg-white/[0.02] cursor-not-allowed line-through'
+                                                 : isSelected
+                                                     ? 'bg-saffron-500 text-white border-saffron-500 shadow-md'
+                                                     : 'border-white/10 text-gray-400 hover:border-white/30 bg-white/5'
+                                         }`}
+                                       >
+                                           {time}
+                                       </button>
+                                   );
+                               })}
                            </div>
 
                            <button 
-                             onClick={confirmBooking}
-                             disabled={!selectedDate}
-                             className="w-full py-4 bg-navy-800 text-white font-bold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-navy-700"
+                             onClick={proceedToPayment}
+                             disabled={!selectedTimeSlot}
+                             className="w-full py-4 bg-navy-800 text-white font-bold rounded-xl shadow-lg disabled:opacity-50 disabled:cursor-not-allowed hover:bg-navy-700 transition-colors"
                            >
                                Proceed to Pay ₹{selectedSpecialist.price}
+                           </button>
+                       </>
+                   )}
+
+                   {/* PAYMENT STEP — UPI QR */}
+                   {bookingStep === 'PAYMENT' && (
+                       <>
+                           <div className="flex justify-between items-center mb-5">
+                               <div className="flex items-center gap-2">
+                                   <button onClick={() => setBookingStep('DATE')} className="p-1 rounded-lg hover:bg-white/10 transition-colors"><ChevronLeft size={20} className="text-gray-400" /></button>
+                                   <h2 className="text-xl font-bold">Payment</h2>
+                               </div>
+                               <button onClick={() => { setSelectedSpecialist(null); setBookingStep('NONE'); }}><X size={24} className="text-gray-400" /></button>
+                           </div>
+
+                           {/* Summary card */}
+                           <div className="bg-white/5 rounded-xl border border-white/10 p-4 mb-5">
+                               <div className="flex justify-between items-center text-sm">
+                                   <span className="text-gray-400">Session with</span>
+                                   <span className="font-bold text-white">{selectedSpecialist.name}</span>
+                               </div>
+                               <div className="flex justify-between items-center text-sm mt-1.5">
+                                   <span className="text-gray-400">Date</span>
+                                   <span className="font-bold text-white">{formatBookingDateFull(selectedBookingDate)}</span>
+                               </div>
+                               <div className="flex justify-between items-center text-sm mt-1.5">
+                                   <span className="text-gray-400">Time</span>
+                                   <span className="font-bold text-white">{selectedTimeSlot}</span>
+                               </div>
+                               <div className="border-t border-white/10 mt-3 pt-3 flex justify-between items-center">
+                                   <span className="text-gray-400 text-sm">Total</span>
+                                   <span className="text-xl font-black text-saffron-400">₹{selectedSpecialist.price}</span>
+                               </div>
+                           </div>
+
+                           {/* QR Code */}
+                           {buildUpiLink() ? (
+                               <div className="flex flex-col items-center mb-5">
+                                   <div className="bg-white rounded-2xl p-4 shadow-lg mb-3">
+                                       <QRCodeSVG
+                                           value={buildUpiLink()}
+                                           size={200}
+                                           level="M"
+                                           includeMargin={false}
+                                       />
+                                   </div>
+                                   <div className="flex items-center gap-2 text-sm text-gray-300">
+                                       <QrCode size={16} className="text-saffron-400" />
+                                       <span>Scan to Pay <strong className="text-saffron-400">₹{selectedSpecialist.price}</strong> via UPI</span>
+                                   </div>
+                                   <p className="text-[10px] text-gray-500 mt-1.5 text-center max-w-[260px]">
+                                       Open any UPI app (Google Pay, PhonePe, Paytm) and scan this code.
+                                   </p>
+                               </div>
+                           ) : (
+                               <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3 mb-5 text-center">
+                                   <p className="text-amber-300 text-sm font-medium">UPI ID not configured.</p>
+                                   <p className="text-amber-400/70 text-[10px] mt-1">Set VITE_UPI_ID in .env to enable QR payments.</p>
+                               </div>
+                           )}
+
+                           {/* Manual confirmation */}
+                           <label className="flex items-start gap-3 p-4 bg-white/5 rounded-xl border border-white/10 cursor-pointer hover:bg-white/[0.08] transition-colors mb-5">
+                               <input
+                                   type="checkbox"
+                                   checked={paymentConfirmed}
+                                   onChange={e => setPaymentConfirmed(e.target.checked)}
+                                   className="mt-0.5 w-5 h-5 rounded border-white/20 accent-green-500 flex-none"
+                               />
+                               <div>
+                                   <span className="text-sm font-bold text-white">I've completed the payment</span>
+                                   <p className="text-[10px] text-gray-500 mt-0.5">Check this box after you have successfully paid via UPI.</p>
+                               </div>
+                           </label>
+
+                           <button
+                               onClick={finalizeBooking}
+                               disabled={!paymentConfirmed}
+                               className="w-full py-4 bg-green-600 text-white font-bold rounded-xl shadow-lg disabled:opacity-40 disabled:cursor-not-allowed hover:bg-green-500 transition-colors flex items-center justify-center gap-2"
+                           >
+                               <ShieldCheck size={18} />
+                               Confirm Booking
                            </button>
                        </>
                    )}
@@ -556,8 +741,11 @@ export default function LiveSession({ onEnd }: LiveSessionProps) {
                                <CheckCircle size={40} className="text-green-500" />
                            </div>
                            <h2 className="text-2xl font-bold text-white mb-2">Booking Confirmed!</h2>
+                           <p className="text-gray-400 mb-1">
+                               Your session with <strong className="text-white">{selectedSpecialist.name}</strong>
+                           </p>
                            <p className="text-gray-400 mb-6">
-                               Your session with {selectedSpecialist.name} is scheduled for {selectedDate}.
+                               {formatBookingDateFull(selectedBookingDate)} at {selectedTimeSlot}
                            </p>
 
                            <button 
