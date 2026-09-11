@@ -117,6 +117,7 @@ const SafeBioVault: React.FC = () => {
   const [isSdohAnalyzing, setIsSdohAnalyzing] = useState(false);
   const [bioProfile, setBioProfile] = useState<string>("No bio-context loaded.");
   const sdohScrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Future Features State
   const [agenticResult, setAgenticResult] = useState<any>(null);
@@ -294,7 +295,16 @@ const SafeBioVault: React.FC = () => {
   // --- SDoH & FILE LOGIC ---
   const handleGetLocation = () => {
       setLocationStatus('locating');
-      if (navigator.geolocation) {
+      
+      // Error boundary & secure context check (HTTPS or localhost required for geolocation)
+      const isSecure = typeof window !== 'undefined' && (window.isSecureContext || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+      if (!isSecure || typeof navigator === 'undefined' || !navigator.geolocation) {
+          console.warn("Geolocation requires a secure context (HTTPS) or is not supported by this browser.");
+          setLocationStatus('denied');
+          return;
+      }
+
+      try {
           navigator.geolocation.getCurrentPosition(
               (position) => {
                   setUserLocation({
@@ -309,18 +319,18 @@ const SafeBioVault: React.FC = () => {
                   }, {
                       id: (Date.now() + 1).toString(),
                       role: 'model',
-                      text: "Location acquired. I can now access real-time environmental data.\n\nPlease describe your symptoms or upload a blood report/prescription for analysis."
+                      text: `Location acquired (${position.coords.latitude.toFixed(2)}°, ${position.coords.longitude.toFixed(2)}°). Real-time environmental data (AQI, weather, disease vectors) active.\n\nPlease describe your symptoms or attach a report/prescription for holistic diagnosis.`
                   }]);
               },
               (err) => {
-                  console.error(err);
+                  console.warn("Geolocation permission error or unavailable:", err);
                   setLocationStatus('denied');
-                  alert("Location permission required for Environmental Analysis.");
-              }
+              },
+              { timeout: 10000, enableHighAccuracy: false }
           );
-      } else {
+      } catch (err) {
+          console.warn("Unexpected geolocation error:", err);
           setLocationStatus('denied');
-          alert("Geolocation not supported.");
       }
   };
 
@@ -336,6 +346,7 @@ const SafeBioVault: React.FC = () => {
           };
           reader.readAsDataURL(file);
       }
+      e.target.value = '';
   };
 
   const handleSDoHSend = async () => {
@@ -378,11 +389,16 @@ const SafeBioVault: React.FC = () => {
 
           const response = await analyzeSDoH(history, `[SYSTEM INJECTED CONTEXT: Active Patient Bio-Profile: ${bioProfile}] \n User Query: ${newUserMsg.text}`, userLocation || undefined, fileData);
 
+          console.log("[SafeBioVault] RAW analyzeSDoH response:", response);
+          if (!response?.text) {
+              console.error("[SafeBioVault] analyzeSDoH returned empty text!", response);
+          }
+
           const botMsg: ChatMessage = {
               id: (Date.now() + 1).toString(),
               role: 'model',
-              text: response.text || "Analysis complete.",
-              groundingUrls: response.urls
+              text: response?.text || "Error: No diagnostic data returned from SDoH engine.",
+              groundingUrls: response?.urls || []
           };
 
           setSdohMessages(prev => [...prev, botMsg]);
@@ -671,7 +687,203 @@ const SafeBioVault: React.FC = () => {
   if (vaultView === 'FEDERATED') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="Edge Bio-Net" subtitle="Federated Learning" icon={Network} onBack={() => setVaultView('MAIN')} /><div className="p-6"><button onClick={triggerFederatedLearning} className="bg-teal-600 px-4 py-2 rounded">Start Training</button><p className="mt-4">{federatedStatus}</p></div></div>;
   if (vaultView === 'SECURITY') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="Crypto-Security" subtitle="Audit & ZKP" icon={FileKey} onBack={() => setVaultView('MAIN')} /><div className="p-6"><button onClick={()=>triggerZKP('Age > 18')} className="bg-white/10 px-4 py-2 rounded mb-4">Gen ZKP</button><p className="text-xs text-green-400 mb-4">{zkpResult}</p>{auditLog.map(l=><div key={l.id} className="text-xs border-b border-white/10 py-2"><p>{l.action}</p><p className="text-gray-500">{l.hash}</p></div>)}</div></div>;
   if (vaultView === 'EMERGENCY') return <div className="flex flex-col h-[calc(100vh-100px)] bg-red-950 text-white rounded-3xl overflow-hidden border-4 border-red-600 relative"><div className="bg-red-800 p-4"><h2 className="font-bold">EMERGENCY DASHBOARD</h2></div><div className="p-6"><p>Blood: O+</p><p>Allergies: Penicillin</p></div></div>;
-  if (vaultView === 'SDOH_ENGINE') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 relative"><VaultHeader title="SDoH Engine" subtitle="Social Determinants" icon={Brain} onBack={() => setVaultView('MAIN')} /><div className="flex-1 overflow-y-auto p-4 space-y-4">{sdohMessages.map(m=><div key={m.id} className={`p-2 rounded ${m.role==='user'?'bg-saffron-600 ml-auto':'bg-white/10'}`}>{m.text}</div>)}<div ref={sdohScrollRef}/></div><div className="p-4 bg-navy-900"><button onClick={handleGetLocation} className="mb-2 text-xs bg-teal-500/20 px-2 py-1 rounded text-teal-400">Share Loc</button><div className="flex gap-2"><input className="flex-1 bg-white/5 p-2 rounded" value={sdohInput} onChange={e=>setSdohInput(e.target.value)} /><button onClick={handleSDoHSend} className="p-2 bg-saffron-500 rounded"><Send size={16}/></button></div></div></div>;
+  if (vaultView === 'SDOH_ENGINE') {
+    return (
+      <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative">
+        <VaultHeader 
+          title="SDoH Diagnostic Engine" 
+          subtitle="Real-Time Environmental & Clinical Correlation" 
+          icon={Brain} 
+          onBack={() => setVaultView('MAIN')} 
+        />
+
+        {/* --- LOCATION STATUS BAR --- */}
+        {locationStatus === 'idle' && (
+          <div className="bg-navy-900/90 border-b border-white/10 px-4 py-3 flex items-center justify-between gap-3 text-xs flex-none">
+            <div className="flex items-center gap-2 text-gray-300">
+              <MapPin size={16} className="text-saffron-400 flex-none" />
+              <span>Location enables real-time AQI, weather & outbreak correlation.</span>
+            </div>
+            <button 
+              onClick={handleGetLocation} 
+              className="px-3 py-1.5 bg-saffron-500 hover:bg-saffron-600 text-white font-medium rounded-lg transition-colors flex items-center gap-1.5 flex-none shadow-sm"
+            >
+              <MapPin size={14} /> Share Location
+            </button>
+          </div>
+        )}
+
+        {locationStatus === 'locating' && (
+          <div className="bg-navy-900/90 border-b border-white/10 px-4 py-3 flex items-center gap-2 text-xs text-saffron-400 flex-none">
+            <div className="w-2 h-2 rounded-full bg-saffron-400 animate-ping"></div>
+            <span className="font-medium">Acquiring GPS coordinates & querying local environmental telemetry...</span>
+          </div>
+        )}
+
+        {locationStatus === 'success' && (
+          <div className="bg-emerald-950/60 border-b border-emerald-500/30 px-4 py-2.5 flex items-center justify-between gap-2 text-xs text-emerald-300 flex-none">
+            <div className="flex items-center gap-2 truncate">
+              <CheckCircle size={15} className="text-emerald-400 flex-none" />
+              <span className="truncate">
+                GPS Active ({userLocation?.lat.toFixed(3)}°, {userLocation?.lng.toFixed(3)}°) • AQI & Disease Vector Grounding Enabled
+              </span>
+            </div>
+            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-mono text-[10px] border border-emerald-500/30 flex-none">
+              GROUNDED
+            </span>
+          </div>
+        )}
+
+        {locationStatus === 'denied' && (
+          <div className="bg-amber-950/60 border-b border-amber-500/30 px-4 py-2.5 flex items-center justify-between gap-3 text-xs text-amber-200 flex-none">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={15} className="text-amber-400 flex-none" />
+              <span>Location access unavailable. Environmental analysis will use regional estimates.</span>
+            </div>
+            <button 
+              onClick={handleGetLocation} 
+              className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 font-medium rounded-md transition-colors flex-none"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        {/* --- CHAT MESSAGES CONTAINER --- */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+          {sdohMessages.map((msg) => (
+            <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+              <div className={`max-w-[85%] rounded-2xl p-4 shadow-md ${
+                msg.role === 'user' 
+                  ? 'bg-saffron-500 text-white rounded-tr-none' 
+                  : msg.isError
+                    ? 'bg-red-500/20 text-red-200 rounded-tl-none border border-red-500/40'
+                    : 'bg-white/10 text-gray-100 rounded-tl-none border border-white/5'
+              }`}>
+                <p className="whitespace-pre-wrap text-sm leading-relaxed font-hindi">{msg.text}</p>
+                
+                {/* Grounding Source Citation Chips */}
+                {msg.groundingUrls && msg.groundingUrls.length > 0 && (
+                  <div className="mt-3 pt-3 border-t border-white/10">
+                    <p className="text-xs text-gray-400 mb-1 flex items-center gap-1 font-medium">
+                      <Globe size={12} className="text-teal-400" /> Real-Time Grounding Sources:
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {msg.groundingUrls.map((url, i) => {
+                        let displayHost = url;
+                        try {
+                          displayHost = new URL(url).hostname;
+                        } catch (e) {
+                          displayHost = url;
+                        }
+                        return (
+                          <a 
+                            key={i} 
+                            href={url} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="text-[10px] text-teal-400 bg-teal-500/10 px-2 py-1 rounded-md truncate max-w-[200px] border border-teal-500/20 hover:bg-teal-500/20 transition-colors flex items-center gap-1"
+                          >
+                            <Link size={10} className="flex-none" />
+                            <span className="truncate">{displayHost}</span>
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          ))}
+
+          {/* Loading Indicator while Gemini fetches data */}
+          {isSdohAnalyzing && (
+            <div className="flex justify-start">
+              <div className="bg-white/10 p-4 rounded-2xl rounded-tl-none flex items-center space-x-2 border border-white/5 shadow-sm">
+                <div className="w-2 h-2 bg-saffron-400 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-saffron-400 rounded-full animate-bounce delay-100"></div>
+                <div className="w-2 h-2 bg-saffron-400 rounded-full animate-bounce delay-200"></div>
+                <span className="text-xs text-gray-400 ml-2">Correlating environmental SDoH & symptoms...</span>
+              </div>
+            </div>
+          )}
+          <div ref={sdohScrollRef} />
+        </div>
+
+        {/* --- ATTACHED FILE PREVIEW CHIP --- */}
+        {attachedFile && (
+          <div className="px-4 py-2 bg-charcoal/95 border-t border-white/10 flex items-center justify-between gap-2 flex-none">
+            <div className="flex items-center gap-2 truncate text-xs text-gray-300">
+              {attachedFile.preview ? (
+                <img src={attachedFile.preview} alt="Attachment preview" className="w-8 h-8 rounded object-cover border border-white/20 flex-none" />
+              ) : (
+                <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center text-teal-400 flex-none">
+                  <FileText size={16} />
+                </div>
+              )}
+              <span className="truncate font-medium">{attachedFile.file.name}</span>
+              <span className="text-[10px] text-gray-500 font-mono">({(attachedFile.file.size / 1024).toFixed(1)} KB)</span>
+            </div>
+            <button 
+              type="button" 
+              onClick={() => setAttachedFile(null)} 
+              className="p-1 hover:bg-white/10 rounded-full text-gray-400 hover:text-white transition-colors"
+              title="Remove attachment"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
+        {/* --- INPUT FOOTER --- */}
+        <div className="p-4 bg-charcoal/90 backdrop-blur-md border-t border-white/10 flex-none z-20">
+          <div className="relative flex items-center gap-2">
+            <input 
+              type="file" 
+              ref={fileInputRef} 
+              onChange={handleFileUpload} 
+              accept="image/*,application/pdf" 
+              className="hidden" 
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className={`p-3 rounded-xl border transition-colors flex-none ${attachedFile ? 'bg-teal-500/20 border-teal-500 text-teal-300' : 'bg-white/5 border-white/10 text-gray-400 hover:text-white hover:bg-white/10'}`}
+              title="Attach lab report or image (Image/PDF)"
+            >
+              <Paperclip size={18} />
+            </button>
+
+            <div className="relative flex-1">
+              <textarea
+                value={sdohInput}
+                onChange={(e) => setSdohInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSDoHSend();
+                  }
+                }}
+                placeholder="Describe symptoms or clinical concerns (e.g. fever, headache)..."
+                rows={1}
+                className="w-full bg-white/5 border border-white/10 p-3.5 pr-12 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-saffron-500/50 focus:border-saffron-500 resize-none h-12 shadow-inner text-sm"
+              />
+              <button 
+                onClick={handleSDoHSend}
+                disabled={isSdohAnalyzing || (!sdohInput.trim() && !attachedFile)}
+                className="absolute right-2 top-2 p-2 bg-saffron-500 rounded-lg text-white hover:bg-saffron-600 disabled:opacity-40 transition-colors shadow-md"
+              >
+                <Send size={16} />
+              </button>
+            </div>
+          </div>
+          <p className="text-[10px] text-center text-gray-500 mt-2">
+            SDoH Engine correlates environmental vectors with clinical data. Not a substitute for emergency care.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // --- VIEW: UNLOCKED CONTENT (MAIN) ---
   return (
