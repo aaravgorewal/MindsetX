@@ -1,7 +1,10 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 import uuid
 import datetime
 import time
-import os
 import logging
 from typing import List, Optional, Dict, Any
 
