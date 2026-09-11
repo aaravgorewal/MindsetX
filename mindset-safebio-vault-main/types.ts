@@ -92,3 +92,24 @@ export interface Reel {
   comments: number;
   isBookable: boolean;
 }
+
+// --- AGENTIC AI TYPES ---
+export interface AgenticStep {
+  id: string;
+  toolName: string;
+  endpoint: string;
+  description: string;
+  args: Record<string, any>;
+  resultSummary: string;
+  rawResult?: any;
+  timestamp: string;
+  status: 'invoked' | 'success' | 'error';
+}
+
+export interface AgenticWorkflowResult {
+  userGoal: string;
+  steps: AgenticStep[];
+  plan: string;
+  provider: 'gemini' | 'openai' | 'offline-agent';
+  timestamp: string;
+}

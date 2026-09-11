@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, FileText, Activity, Lock, AlertTriangle, CheckCircle, Plus, Fingerprint, Dna, Database, Server, ScanFace, X, Pill, DownloadCloud, EyeOff, Link, Brain, Hexagon, ChevronLeft, MapPin, Wind, Thermometer, CloudRain, Send, Paperclip, Bot, Layers, Microscope, Coins, Zap, Network, FileKey, Eye, Globe, Siren, QrCode, Stethoscope, TriangleAlert, UserCheck, BellRing, Timer, FileCheck, Clock, Camera, ArrowUpRight } from 'lucide-react';
-import { DocumentItem, ChatMessage } from '../types';
+import { Shield, FileText, Activity, Lock, AlertTriangle, CheckCircle, Plus, Fingerprint, Dna, Database, Server, ScanFace, X, Pill, DownloadCloud, EyeOff, Link, Brain, Hexagon, ChevronLeft, MapPin, Wind, Thermometer, CloudRain, Send, Paperclip, Bot, Layers, Microscope, Coins, Zap, Network, FileKey, Eye, Globe, Siren, QrCode, Stethoscope, TriangleAlert, UserCheck, BellRing, Timer, FileCheck, Clock, Camera, ArrowUpRight, Wrench, Sparkles, Copy, Check, RefreshCw, TrendingUp, AlertCircle, Smartphone, Building2, Watch, Cpu, Play, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { DocumentItem, ChatMessage, AgenticStep, AgenticWorkflowResult } from '../types';
 import { analyzeSDoH, runAgenticWorkflow, simulateDigitalTwin, extractDrugNameFromImage, analyzeMultiModal, runFederatedLearning, generateZKP, parseToFHIR } from '../services/geminiService';
 
 // --- SUB-COMPONENTS DEFINED OUTSIDE TO PREVENT RE-RENDER ISSUES ---
@@ -76,6 +76,69 @@ interface ActiveGrant {
     tokenHash: string;
 }
 
+const FEDERATED_NODES = [
+  {
+    id: 'node-1',
+    name: 'Local BioVault',
+    type: 'iPhone 15 Pro (You)',
+    icon: Smartphone,
+    isLocal: true,
+    records: '50 Biometrics (Local)',
+    deltaWeight: '+0.014 Δw',
+    positionClass: 'top-[3%] left-1/2 -translate-x-1/2',
+    svgX: 500,
+    svgY: 85,
+  },
+  {
+    id: 'node-2',
+    name: 'AIIMS Delhi',
+    type: 'Hospital Cluster',
+    icon: Building2,
+    isLocal: false,
+    records: '1,200 Patient Cohort',
+    deltaWeight: '-0.009 Δw',
+    positionClass: 'top-[15%] right-[2%] sm:right-[6%]',
+    svgX: 830,
+    svgY: 180,
+  },
+  {
+    id: 'node-3',
+    name: 'Apollo Bangalore',
+    type: 'Cardiology Lab',
+    icon: Activity,
+    isLocal: false,
+    records: '840 ECG Streams',
+    deltaWeight: '+0.022 Δw',
+    positionClass: 'bottom-[4%] right-[3%] sm:right-[7%]',
+    svgX: 780,
+    svgY: 520,
+  },
+  {
+    id: 'node-4',
+    name: 'Max Healthcare',
+    type: 'Endocrine Clinic',
+    icon: Database,
+    isLocal: false,
+    records: '630 Diabetic Logs',
+    deltaWeight: '+0.007 Δw',
+    positionClass: 'bottom-[4%] left-[3%] sm:left-[7%]',
+    svgX: 220,
+    svgY: 520,
+  },
+  {
+    id: 'node-5',
+    name: 'Wearable Mesh',
+    type: 'Apple Watch & Oura',
+    icon: Watch,
+    isLocal: false,
+    records: '2,100 Time-series',
+    deltaWeight: '-0.012 Δw',
+    positionClass: 'top-[15%] left-[2%] sm:left-[6%]',
+    svgX: 170,
+    svgY: 180,
+  },
+];
+
 const SafeBioVault: React.FC = () => {
   // Vault State
   const [isLocked, setIsLocked] = useState(true);
@@ -119,8 +182,13 @@ const SafeBioVault: React.FC = () => {
   const sdohScrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Future Features State
-  const [agenticResult, setAgenticResult] = useState<any>(null);
+  // Agentic AI State
+  const [agenticGoal, setAgenticGoal] = useState<string>('');
+  const [agenticResult, setAgenticResult] = useState<AgenticWorkflowResult | null>(null);
+  const [isAgenticLoading, setIsAgenticLoading] = useState<boolean>(false);
+  const [agenticLiveSteps, setAgenticLiveSteps] = useState<AgenticStep[]>([]);
+  const [agenticError, setAgenticError] = useState<string>('');
+  const [agenticCopied, setAgenticCopied] = useState<boolean>(false);
   const [twinSimulation, setTwinSimulation] = useState<string>('');
   const [twinInput, setTwinInput] = useState('');
   const [isTwinLoading, setIsTwinLoading] = useState(false);
@@ -135,6 +203,12 @@ const SafeBioVault: React.FC = () => {
   
   // New Features State
   const [federatedStatus, setFederatedStatus] = useState('');
+  const [flAccuracy, setFlAccuracy] = useState<number>(87.2);
+  const [flPrevAccuracy, setFlPrevAccuracy] = useState<number>(86.8);
+  const [flRound, setFlRound] = useState<number>(14);
+  const [isFlRunning, setIsFlRunning] = useState<boolean>(false);
+  const [flStep, setFlStep] = useState<'idle' | 'local_training' | 'homomorphic' | 'aggregating' | 'completed'>('idle');
+  const [flStatusMessage, setFlStatusMessage] = useState<string>('System standby. Ready for Federated Round #15.');
   const [zkpResult, setZkpResult] = useState('');
   const [auditLog, setAuditLog] = useState([
       { id: 'tx-101', time: 'Today, 10:30 AM', actor: 'Dr. Rao (Psychiatry)', action: 'Viewed Sentinel Report', hash: '0x7f2...b92' },
@@ -424,14 +498,32 @@ const SafeBioVault: React.FC = () => {
       }
   };
 
-  // --- FUTURE FEATURES HANDLERS ---
-  const triggerAgenticWorkflow = async () => {
-      setIsSdohAnalyzing(true);
+  // --- AGENTIC AI HANDLER ---
+  const triggerAgenticWorkflow = async (overrideGoal?: string) => {
+      const goalToRun = (overrideGoal !== undefined ? overrideGoal : agenticGoal).trim();
+      if (!goalToRun) {
+          setAgenticError('Please enter or select a health goal to begin.');
+          return;
+      }
+      setAgenticError('');
+      setIsAgenticLoading(true);
+      setAgenticLiveSteps([]);
+      setAgenticResult(null);
       try {
-          const result = await runAgenticWorkflow("High genetic risk for heart disease detected in VCF + User reports chest tightness.");
+          const result = await runAgenticWorkflow(goalToRun, (newStep) => {
+              setAgenticLiveSteps(prev => {
+                  if (prev.some(s => s.id === newStep.id)) return prev;
+                  return [...prev, newStep];
+              });
+          });
           setAgenticResult(result);
-      } catch(e) { console.error(e); }
-      setIsSdohAnalyzing(false);
+          setAgenticLiveSteps(result.steps);
+      } catch(e: any) {
+          console.error('[Agentic AI] Error:', e);
+          setAgenticError(e?.message || 'Agentic workflow encountered an unexpected error.');
+      } finally {
+          setIsAgenticLoading(false);
+      }
   };
 
   const triggerTwinSimulation = async () => {
@@ -501,23 +593,58 @@ const SafeBioVault: React.FC = () => {
       setIsSdohAnalyzing(false);
   };
 
-  const triggerFederatedLearning = async () => {
-      setIsSdohAnalyzing(true);
-      setFederatedStatus("Initializing Local Training...");
-      try {
-          // Simulate steps
-          setTimeout(() => setFederatedStatus("Local Training: Epoch 1/5 complete..."), 1000);
-          setTimeout(() => setFederatedStatus("Homomorphic Encryption of Weights..."), 3000);
-          
-          const result = await runFederatedLearning("Local Diabetes Dataset: 50 records.");
-          setFederatedStatus(result);
-          
-          setTimeout(() => {
-              setAuditLog(prev => [{ id: `tx-${Date.now()}`, time: 'Just Now', actor: 'Federated Model', action: 'Encrypted Weight Upload', hash: `0x${Math.random().toString(16).substr(2, 8)}` }, ...prev]);
-          }, 2000);
-      } catch (e) { console.error(e); }
-      setIsSdohAnalyzing(false);
+  const triggerFederatedRound = () => {
+    if (isFlRunning) return;
+    setIsFlRunning(true);
+    setFlStep('local_training');
+    setFlStatusMessage('Phase 1/3: Local on-device gradient calculation on private biometric tensors...');
+
+    // Phase 1 -> 2: Homomorphic encryption
+    setTimeout(() => {
+      setFlStep('homomorphic');
+      setFlStatusMessage('Phase 2/3: Applying differential privacy (ε=1.2) and Paillier homomorphic encryption to weight vectors...');
+    }, 1200);
+
+    // Phase 2 -> 3: Aggregating (transmitting to center)
+    setTimeout(() => {
+      setFlStep('aggregating');
+      setFlStatusMessage('Phase 3/3: Transmitting encrypted weights to Global Model. Running FedAvg aggregation algorithm...');
+    }, 2400);
+
+    // Phase 3 -> 4: Completion and accuracy tick-up
+    setTimeout(() => {
+      setFlStep('completed');
+      setFlPrevAccuracy(flAccuracy);
+      const nextAcc = +(flAccuracy + 0.4).toFixed(1);
+      setFlAccuracy(nextAcc);
+      const nextRound = flRound + 1;
+      setFlRound(nextRound);
+      setFlStatusMessage(`Global model accuracy improved: ${flAccuracy}% → ${nextAcc}% (Round #${nextRound} completed).`);
+      setIsFlRunning(false);
+
+      setAuditLog(prev => [
+        {
+          id: `tx-${Date.now()}`,
+          time: 'Just Now',
+          actor: 'Edge Bio-Net',
+          action: `FedAvg Round #${nextRound} Aggregation (Accuracy: ${nextAcc}%)`,
+          hash: `0x${Math.random().toString(16).substr(2, 8)}`
+        },
+        ...prev
+      ]);
+    }, 3800);
   };
+
+  const resetFederatedDemo = () => {
+    setIsFlRunning(false);
+    setFlStep('idle');
+    setFlAccuracy(87.2);
+    setFlPrevAccuracy(86.8);
+    setFlRound(14);
+    setFlStatusMessage('System standby. Ready for Federated Round #15.');
+  };
+
+  const triggerFederatedLearning = triggerFederatedRound;
 
   const triggerZKP = async (claim: string) => {
       setIsSdohAnalyzing(true);
@@ -732,8 +859,286 @@ const SafeBioVault: React.FC = () => {
 
   // --- SUB-SCREENS (Keep existing logic) ---
   // ... (Agentic, Twin, Multimodal, Research, Federated, Security, Emergency, SDoH Views are preserved) ...
-  // Re-pasting standard view blocks for completion
-  if (vaultView === 'AGENTIC') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="Agentic AI" subtitle="Autonomous Medical Partner" icon={Bot} onBack={() => setVaultView('MAIN')} /><div className="flex-1 overflow-y-auto p-6 space-y-6"><button onClick={triggerAgenticWorkflow} className="px-6 py-3 bg-saffron-500 text-white font-bold rounded-xl">Run Risk Analysis</button>{agenticResult && <p className="text-white mt-4">{JSON.stringify(agenticResult)}</p>}</div></div>;
+  if (vaultView === 'AGENTIC') return (
+    <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative">
+      <VaultHeader 
+        title="Agentic AI" 
+        subtitle="Autonomous Care Partner • Real Tool Orchestration" 
+        icon={Bot} 
+        onBack={() => setVaultView('MAIN')} 
+      />
+
+      <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6 no-scrollbar">
+        {/* Architecture Info Header */}
+        <div className="bg-gradient-to-r from-saffron-500/10 via-navy-900/40 to-white/5 border border-saffron-500/20 rounded-2xl p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2 mb-1">
+                <span className="w-2 h-2 rounded-full bg-saffron-500 animate-pulse" />
+                <span className="text-xs font-bold text-saffron-400 uppercase tracking-wider">Multi-Tool Decision Engine</span>
+              </div>
+              <p className="text-xs text-gray-300 leading-relaxed">
+                Describe a personal health goal or symptom in natural language. The agent autonomously reasons, selects, and executes real backend diagnostic tools across Qdrant vector memory, clinical triage, and wellness catalog before synthesizing your care plan.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/10 text-[11px] font-mono text-gray-400">
+            <span className="px-2 py-0.5 rounded bg-teal-500/10 border border-teal-500/20 text-teal-300 flex items-center gap-1">
+              <Brain size={11}/> /memory/query
+            </span>
+            <span className="px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20 text-blue-300 flex items-center gap-1">
+              <Activity size={11}/> /phq9
+            </span>
+            <span className="px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 flex items-center gap-1">
+              <Sparkles size={11}/> /studio
+            </span>
+            <span className="px-2 py-0.5 rounded bg-purple-500/10 border border-purple-500/20 text-purple-300 flex items-center gap-1">
+              <Network size={11}/> /drift
+            </span>
+          </div>
+        </div>
+
+        {/* User Goal Input */}
+        <div className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-3">
+          <label className="block text-xs font-bold text-gray-300 uppercase tracking-wider">
+            Define Health Goal or Symptoms
+          </label>
+          <textarea
+            value={agenticGoal}
+            onChange={(e) => setAgenticGoal(e.target.value)}
+            placeholder="Describe your health goal, concern, or symptom (e.g., 'Help me build a plan to sleep better' or 'I want to track my mood and assess my symptoms this week')..."
+            rows={3}
+            disabled={isAgenticLoading}
+            className="w-full bg-black/40 border border-white/10 rounded-xl p-3 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-saffron-500/50 focus:border-saffron-500 resize-none transition-all"
+          />
+
+          {/* Quick Suggestion Chips */}
+          <div className="space-y-1.5">
+            <p className="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Quick Suggestions:</p>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { label: "🌙 Plan to sleep better", text: "Help me build a plan to sleep better" },
+                { label: "🧠 Assess mood & burnout", text: "I want to track my mood and assess my symptoms this week" },
+                { label: "📊 Memory history & drift", text: "Check my prior session memory in vector store and evaluate behavioral drift" }
+              ].map((preset, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  disabled={isAgenticLoading}
+                  onClick={() => {
+                    setAgenticGoal(preset.text);
+                    triggerAgenticWorkflow(preset.text);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-saffron-500/20 text-gray-300 hover:text-saffron-300 border border-white/10 hover:border-saffron-500/30 text-xs transition-all flex items-center gap-1 disabled:opacity-50"
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Action Trigger Button */}
+          <div className="pt-2 flex justify-end">
+            <button
+              type="button"
+              disabled={isAgenticLoading || !agenticGoal.trim()}
+              onClick={() => triggerAgenticWorkflow()}
+              className="px-6 py-3 bg-saffron-500 hover:bg-saffron-600 active:scale-95 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-all shadow-md disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {isAgenticLoading ? (
+                <>
+                  <RefreshCw size={14} className="animate-spin" />
+                  Orchestrating Agent Tools...
+                </>
+              ) : (
+                <>
+                  <Bot size={15} />
+                  Activate Autonomous Agent
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Error State */}
+        {agenticError && (
+          <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 flex items-center justify-between text-xs text-red-300 animate-fadeIn">
+            <div className="flex items-center gap-2">
+              <AlertTriangle size={16} className="text-red-400 flex-none" />
+              <span>{agenticError}</span>
+            </div>
+            <button onClick={() => setAgenticError('')} className="text-red-400 hover:text-white">
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
+        {/* Loading Indicator */}
+        {isAgenticLoading && (
+          <div className="flex items-center justify-center py-6">
+            <div className="bg-white/10 px-6 py-3.5 rounded-2xl flex items-center space-x-2.5 border border-white/5 shadow-sm">
+              <div className="w-2 h-2 bg-saffron-400 rounded-full animate-bounce" />
+              <div className="w-2 h-2 bg-saffron-400 rounded-full animate-bounce" style={{ animationDelay: '120ms' }} />
+              <div className="w-2 h-2 bg-saffron-400 rounded-full animate-bounce" style={{ animationDelay: '240ms' }} />
+              <span className="text-xs text-gray-300 ml-2 font-medium">Agent deciding & invoking backend endpoints...</span>
+            </div>
+          </div>
+        )}
+
+        {/* Step-by-Step Tool Execution Trace */}
+        {agenticLiveSteps.length > 0 && (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between px-1">
+              <h4 className="text-xs uppercase font-bold text-saffron-400 tracking-wider flex items-center gap-2">
+                <Wrench size={14} />
+                Autonomous Tool Execution Trace
+              </h4>
+              <span className="text-[10px] font-mono bg-saffron-500/20 text-saffron-300 border border-saffron-500/30 px-2 py-0.5 rounded-full font-bold">
+                {agenticLiveSteps.length} {agenticLiveSteps.length === 1 ? 'Action' : 'Actions'} Taken
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {agenticLiveSteps.map((step, idx) => {
+                const isMemory = step.toolName === 'query_memory';
+                const isPhq9 = step.toolName === 'run_phq9_assessment';
+                const isStudio = step.toolName === 'recommend_wellness_studio';
+                const isDrift = step.toolName === 'analyze_behavioral_drift';
+
+                const badgeColor = isMemory
+                  ? 'bg-teal-500/20 border-teal-500/30 text-teal-300'
+                  : isPhq9
+                  ? 'bg-blue-500/20 border-blue-500/30 text-blue-300'
+                  : isStudio
+                  ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-300'
+                  : 'bg-purple-500/20 border-purple-500/30 text-purple-300';
+
+                return (
+                  <div 
+                    key={step.id || idx} 
+                    className="bg-white/5 border border-white/10 rounded-2xl p-4 space-y-2.5 transition-all hover:border-saffron-500/30 shadow-sm"
+                  >
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-400 font-mono">#{idx + 1}</span>
+                        <span className={`px-2 py-0.5 rounded-lg border font-mono text-xs font-bold flex items-center gap-1.5 ${badgeColor}`}>
+                          {isMemory && <Brain size={12} />}
+                          {isPhq9 && <Activity size={12} />}
+                          {isStudio && <Sparkles size={12} />}
+                          {isDrift && <Network size={12} />}
+                          {step.endpoint}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono text-green-400 bg-green-500/10 border border-green-500/20 px-2 py-0.5 rounded flex items-center gap-1 font-bold">
+                          <CheckCircle size={10} /> HTTP 200 OK
+                        </span>
+                        <span className="text-[10px] text-gray-500 font-mono">{step.timestamp}</span>
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-gray-200 font-medium">{step.description}</p>
+
+                    {step.args && Object.keys(step.args).length > 0 && (
+                      <div className="text-[11px] font-mono text-gray-400 bg-black/40 p-2 rounded-lg border border-white/5 overflow-x-auto">
+                        <span className="text-saffron-400 font-bold">Payload:</span> {JSON.stringify(step.args)}
+                      </div>
+                    )}
+
+                    <div className="text-xs text-slate-300 font-mono bg-white/5 p-2.5 rounded-lg border border-white/10 flex items-start gap-2">
+                      <span className="text-indiaGreen-400 font-bold flex-none">↳ Output:</span>
+                      <span className="leading-snug">{step.resultSummary}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Final Synthesized Care Plan */}
+        {agenticResult && !isAgenticLoading && (
+          <div className="space-y-4 pt-2">
+            <div className="flex items-center justify-between gap-2 flex-wrap px-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs uppercase font-bold text-saffron-400 tracking-wider flex items-center gap-1.5">
+                  <Sparkles size={14} className="text-saffron-400" />
+                  Synthesized Clinical Care Plan
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {agenticResult.provider === 'gemini' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-300 bg-teal-500/10 border border-teal-500/20 px-2.5 py-1 rounded-full">
+                    ✦ Gemini Tool-Calling
+                  </span>
+                )}
+                {agenticResult.provider === 'openai' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-full">
+                    ⚡ OpenAI Tool-Calling Backup
+                  </span>
+                )}
+                {agenticResult.provider === 'offline-agent' && (
+                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-saffron-300 bg-saffron-500/10 border border-saffron-500/20 px-2.5 py-1 rounded-full">
+                    ⚙ Live Backend Agent Dispatch
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    navigator.clipboard.writeText(agenticResult.plan);
+                    setAgenticCopied(true);
+                    setTimeout(() => setAgenticCopied(false), 2000);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-gray-300 hover:text-white border border-white/10 text-xs transition-colors flex items-center gap-1 font-medium"
+                >
+                  {agenticCopied ? <Check size={12} className="text-green-400" /> : <Copy size={12} />}
+                  {agenticCopied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+            </div>
+
+            {/* Structured Sections — split on ## headers */}
+            {agenticResult.plan.split(/(?=^## )/m).filter(Boolean).map((section, idx) => {
+              const lines = section.trim().split('\n');
+              const headerMatch = lines[0]?.match(/^##\s+(.+)/);
+              const title = headerMatch ? headerMatch[1] : null;
+              const body = headerMatch ? lines.slice(1).join('\n').trim() : section.trim();
+
+              const sectionStyles: Record<string, string> = {
+                'Clinical Context & Evidence': 'border-teal-500/30 bg-teal-500/5',
+                'Assessment & Severity': 'border-blue-500/30 bg-blue-500/5',
+                'Personalized Action Plan': 'border-saffron-500/30 bg-saffron-500/5',
+                'Safety & Follow-up Protocols': 'border-purple-500/30 bg-purple-500/5',
+              };
+              const style = title ? (sectionStyles[title] || 'border-white/10 bg-white/5') : 'border-white/10 bg-white/5';
+
+              return (
+                <div key={idx} className={`rounded-2xl border p-4 ${style}`}>
+                  {title && (
+                    <h3 className="text-sm font-bold text-white mb-2 flex items-center gap-2">
+                      <span className="w-1.5 h-1.5 rounded-full bg-saffron-400" />
+                      {title}
+                    </h3>
+                  )}
+                  <div className="text-xs text-gray-300 space-y-1.5 leading-relaxed whitespace-pre-line">
+                    {body}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Disclaimer & Compliance Footer */}
+            <div className="bg-white/5 border border-white/10 rounded-xl p-3 text-[11px] text-gray-400 flex items-start gap-2">
+              <Shield size={14} className="text-saffron-400 flex-none mt-0.5" />
+              <span>
+                <strong>ABDM Consent Sandbox:</strong> Actions & protocols synthesized under local cryptographic bio-vault consent. This constitutes automated decision support and lifestyle guidance, not an emergency medical diagnosis.
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
   if (vaultView === 'TWIN') return (
     <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative">
       <VaultHeader title="Digital Twin" subtitle="Virtual Patient Simulation" icon={Layers} onBack={() => setVaultView('MAIN')} />
@@ -918,7 +1323,400 @@ const SafeBioVault: React.FC = () => {
   );
   if (vaultView === 'MULTIMODAL') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="Multi-Modal AI" subtitle="Vision + Bio + Text" icon={Microscope} onBack={() => setVaultView('MAIN')} /><div className="flex-1 overflow-y-auto p-6"><input type="file" onChange={handleFileUpload} className="mb-4"/><textarea className="w-full bg-white/10 p-2 rounded" value={mmTextInput} onChange={e=>setMmTextInput(e.target.value)} placeholder="Notes"/><button onClick={triggerMultiModal} className="mt-2 bg-blue-600 px-4 py-2 rounded">Analyze</button>{multiModalResult && <p className="mt-4 text-sm">{multiModalResult}</p>}</div></div>;
   if (vaultView === 'RESEARCH') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="ZK Research" subtitle="Earn Crypto" icon={Coins} onBack={() => setVaultView('MAIN')} /><div className="p-6"><p>Wallet: 1250 Credits</p></div></div>;
-  if (vaultView === 'FEDERATED') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="Edge Bio-Net" subtitle="Federated Learning" icon={Network} onBack={() => setVaultView('MAIN')} /><div className="p-6"><button onClick={triggerFederatedLearning} className="bg-teal-600 px-4 py-2 rounded">Start Training</button><p className="mt-4">{federatedStatus}</p></div></div>;
+  if (vaultView === 'FEDERATED') return (
+    <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative">
+      <VaultHeader 
+        title="Edge Bio-Net" 
+        subtitle="Federated Learning • Decentralized Privacy" 
+        icon={Network} 
+        onBack={() => setVaultView('MAIN')} 
+      />
+
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 no-scrollbar">
+        {/* Visible Honest Simulated Demo Banner */}
+        <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-3.5 text-amber-200">
+          <div className="p-2 bg-amber-500/20 rounded-xl text-amber-400 shrink-0 mt-0.5">
+            <AlertCircle size={18} />
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
+              <span className="font-bold text-[11px] bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded border border-amber-400/30 uppercase tracking-wider">
+                Simulated Demo
+              </span>
+              <span className="text-gray-400 text-xs font-mono">Edge Computing & Privacy Architecture</span>
+            </div>
+            <p className="text-gray-300 leading-relaxed text-xs">
+              This interactive visualization illustrates the concept of decentralized Federated Learning (FedAvg).
+              Gradient tensor computation, differential privacy noise, and model parameter aggregation are simulated client-side to demonstrate how a central diagnostic model learns from distributed healthcare devices without extracting raw personal health information (PHI). This is not a live distributed cluster training run.
+            </p>
+          </div>
+        </div>
+
+        {/* Control Bar & Live Metrics */}
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white/5 border border-white/10 p-3.5 sm:p-4 rounded-2xl">
+          <div className="flex items-center gap-2.5 sm:gap-3">
+            <button
+              onClick={triggerFederatedRound}
+              disabled={isFlRunning}
+              className={`px-4 sm:px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center gap-2 transition-all shadow-lg ${
+                isFlRunning 
+                  ? 'bg-saffron-500/30 text-saffron-300 border border-saffron-500/40 cursor-not-allowed' 
+                  : 'bg-gradient-to-r from-saffron-500 to-saffron-600 hover:from-saffron-400 hover:to-saffron-500 text-navy-900 shadow-saffron-500/20 hover:scale-[1.02] active:scale-[0.98]'
+              }`}
+            >
+              <RefreshCw size={14} className={isFlRunning ? 'animate-spin' : ''} />
+              {isFlRunning ? 'Running Federated Round...' : 'Run Federated Round'}
+            </button>
+
+            <button
+              onClick={resetFederatedDemo}
+              disabled={isFlRunning}
+              className="px-3 py-2.5 rounded-xl text-xs text-gray-400 hover:text-white bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
+              title="Reset to Baseline Round 14"
+            >
+              Reset
+            </button>
+          </div>
+
+          <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+            <div className="bg-navy-900/70 border border-white/10 px-3 py-1.5 rounded-xl flex items-center gap-2">
+              <span className="text-[10px] text-gray-400 uppercase tracking-wider font-mono">Consensus Round</span>
+              <span className="text-xs font-bold font-mono text-saffron-400">#{flRound}</span>
+            </div>
+            <div className="bg-navy-900/70 border border-white/10 px-3 py-1.5 rounded-xl flex items-center gap-2">
+              <span className="text-[10px] text-gray-400 uppercase tracking-wider font-mono">Global Accuracy</span>
+              <span className="text-xs font-bold font-mono text-teal-300">{flAccuracy}%</span>
+              {flStep === 'completed' && (
+                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/20 px-1.5 py-0.5 rounded border border-emerald-500/30">
+                  +{(flAccuracy - flPrevAccuracy).toFixed(1)}%
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Dynamic Status / Result Notification */}
+        {flStep === 'completed' ? (
+          <div className="bg-gradient-to-r from-emerald-500/20 via-teal-500/15 to-emerald-500/20 border border-emerald-500/40 rounded-2xl p-4 flex items-center justify-between gap-4 animate-fade-in shadow-lg">
+            <div className="flex items-center gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/25 border border-emerald-500/40 flex items-center justify-center text-emerald-300 shrink-0">
+                <TrendingUp size={22} />
+              </div>
+              <div>
+                <div className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                  <span>Federated Round #{flRound} Merged</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                </div>
+                <div className="text-sm font-semibold text-white mt-0.5">
+                  Global model accuracy improved: <span className="font-mono text-gray-400 line-through mr-1">{flPrevAccuracy}%</span> → <span className="font-mono text-emerald-300 text-base font-bold">{flAccuracy}%</span> (+{(flAccuracy - flPrevAccuracy).toFixed(1)}%)
+                </div>
+              </div>
+            </div>
+            <div className="hidden sm:flex items-center gap-2 text-xs font-mono text-emerald-300 bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20 shrink-0">
+              <ShieldCheck size={14} /> Zero Raw Data Leaked
+            </div>
+          </div>
+        ) : isFlRunning ? (
+          <div className="bg-gradient-to-r from-saffron-500/15 via-navy-900/50 to-teal-500/15 border border-saffron-500/30 rounded-2xl p-4 flex items-center gap-3.5">
+            <div className="w-10 h-10 rounded-xl bg-saffron-500/20 border border-saffron-500/40 flex items-center justify-center text-saffron-400 shrink-0">
+              <RefreshCw size={20} className="animate-spin" />
+            </div>
+            <div className="flex-1">
+              <div className="text-[10px] font-bold text-saffron-400 uppercase tracking-wider">
+                {flStep === 'local_training' && 'Step 1/3 • Local Gradient Computation'}
+                {flStep === 'homomorphic' && 'Step 2/3 • Differential Privacy & Homomorphic Encryption'}
+                {flStep === 'aggregating' && 'Step 3/3 • Secure Multi-Party Aggregation (FedAvg)'}
+              </div>
+              <p className="text-xs text-gray-200 mt-0.5 font-mono">{flStatusMessage}</p>
+            </div>
+          </div>
+        ) : null}
+
+        {/* Visual Topology Diagram (SVG Connectors + Interactive Node Cards) */}
+        <div className="relative w-full h-[520px] bg-gradient-to-b from-navy-950 via-charcoal to-navy-950 border border-white/10 rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center select-none">
+          {/* Background SVG Grid & Animated Flow Lines */}
+          <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 1000 640" preserveAspectRatio="xMidYMid meet">
+            <defs>
+              <radialGradient id="flCenterGlow" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#2DD4BF" stopOpacity="0.25" />
+                <stop offset="100%" stopColor="#2DD4BF" stopOpacity="0" />
+              </radialGradient>
+              <filter id="flGlow" x="-50%" y="-50%" width="200%" height="200%">
+                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+
+            {/* Ambient Concentric Rings */}
+            <circle cx="500" cy="320" r="140" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="1" strokeDasharray="6 6" />
+            <circle cx="500" cy="320" r="250" fill="none" stroke="rgba(255,255,255,0.03)" strokeWidth="1" strokeDasharray="8 8" />
+            <circle cx="500" cy="320" r="170" fill="url(#flCenterGlow)" />
+
+            {/* Connecting Lines between Nodes and Center (500, 320) */}
+            {FEDERATED_NODES.map((node) => (
+              <line
+                key={`line-${node.id}`}
+                x1={node.svgX}
+                y1={node.svgY}
+                x2="500"
+                y2="320"
+                stroke={flStep === 'aggregating' ? '#2DD4BF' : isFlRunning ? '#FF9933' : 'rgba(255,255,255,0.14)'}
+                strokeWidth={flStep === 'aggregating' ? 3 : 1.5}
+                strokeDasharray={flStep === 'aggregating' ? 'none' : '5 5'}
+                className="transition-all duration-300"
+              />
+            ))}
+
+            {/* Animated Weight Packets streaming towards center during aggregation */}
+            {flStep === 'aggregating' && FEDERATED_NODES.map((node, i) => (
+              <circle key={`pkt-${node.id}`} r="6" fill="#2DD4BF" filter="url(#flGlow)">
+                <animateMotion 
+                  path={`M ${node.svgX} ${node.svgY} L 500 320`} 
+                  dur={`${0.9 + (i * 0.15)}s`} 
+                  repeatCount="indefinite" 
+                />
+              </circle>
+            ))}
+          </svg>
+
+          {/* Central Global Model Node */}
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 flex flex-col items-center">
+            <div className={`relative p-4 sm:p-5 rounded-3xl backdrop-blur-xl border transition-all duration-500 shadow-2xl flex flex-col items-center text-center max-w-[210px] ${
+              flStep === 'aggregating' 
+                ? 'bg-navy-900/95 border-teal-400 ring-4 ring-teal-400/30 shadow-[0_0_30px_rgba(45,212,191,0.3)] scale-105'
+                : flStep === 'completed'
+                ? 'bg-navy-900/95 border-emerald-400 ring-4 ring-emerald-400/20'
+                : 'bg-navy-900/90 border-white/20'
+            }`}>
+              <div className="relative mb-2">
+                <div className={`w-12 h-12 rounded-2xl flex items-center justify-center transition-all ${
+                  flStep === 'aggregating'
+                    ? 'bg-teal-500/20 text-teal-300 animate-spin-slow'
+                    : flStep === 'completed'
+                    ? 'bg-emerald-500/20 text-emerald-400'
+                    : 'bg-saffron-500/10 text-saffron-400'
+                }`}>
+                  <Network size={24} />
+                </div>
+                {isFlRunning && (
+                  <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-saffron-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-saffron-500"></span>
+                  </span>
+                )}
+              </div>
+
+              <div className="text-[11px] font-bold text-white uppercase tracking-wider">Global Model</div>
+              <div className="text-[10px] text-gray-400 font-mono mt-0.5">MindSet-Edge v2.4</div>
+
+              <div className="mt-2.5 pt-2 border-t border-white/10 w-full flex items-center justify-around gap-2">
+                <div>
+                  <div className="text-[9px] uppercase tracking-wider text-gray-400 font-mono">Accuracy</div>
+                  <div className="text-sm font-bold font-mono text-teal-300">{flAccuracy}%</div>
+                </div>
+                <div className="w-px h-6 bg-white/10" />
+                <div>
+                  <div className="text-[9px] uppercase tracking-wider text-gray-400 font-mono">Round</div>
+                  <div className="text-sm font-bold font-mono text-saffron-400">#{flRound}</div>
+                </div>
+              </div>
+
+              <div className="mt-2 text-[9px] font-mono px-2 py-0.5 rounded-full border bg-white/5 border-white/10 text-gray-300">
+                {flStep === 'idle' && 'Consensus: Ready'}
+                {flStep === 'local_training' && 'Nodes Training...'}
+                {flStep === 'homomorphic' && 'Encrypting Deltas...'}
+                {flStep === 'aggregating' && 'FedAvg Merging...'}
+                {flStep === 'completed' && 'Converged (Round Synced)'}
+              </div>
+            </div>
+          </div>
+
+          {/* 5 Edge Device Nodes */}
+          {FEDERATED_NODES.map((node) => {
+            const IconComponent = node.icon;
+            const isLocalNode = node.isLocal;
+            return (
+              <div
+                key={node.id}
+                className={`absolute z-10 p-2.5 sm:p-3 rounded-2xl backdrop-blur-md border transition-all duration-300 max-w-[135px] sm:max-w-[170px] ${node.positionClass} ${
+                  flStep === 'local_training'
+                    ? 'bg-navy-900/95 border-saffron-500/80 shadow-[0_0_15px_rgba(255,153,51,0.25)] scale-[1.03]'
+                    : flStep === 'homomorphic'
+                    ? 'bg-navy-900/95 border-teal-400/80 shadow-[0_0_15px_rgba(45,212,191,0.25)]'
+                    : flStep === 'aggregating'
+                    ? 'bg-navy-900/95 border-teal-400/90 shadow-[0_0_20px_rgba(45,212,191,0.35)] scale-105'
+                    : flStep === 'completed'
+                    ? 'bg-navy-900/90 border-emerald-500/50'
+                    : isLocalNode
+                    ? 'bg-navy-900/90 border-saffron-500/40 ring-1 ring-saffron-500/20'
+                    : 'bg-navy-900/80 border-white/10'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1.5">
+                  <div className={`p-1.5 rounded-lg shrink-0 ${
+                    isLocalNode 
+                      ? 'bg-saffron-500/20 text-saffron-400' 
+                      : 'bg-white/10 text-gray-300'
+                  }`}>
+                    <IconComponent size={14} />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-white truncate leading-tight">
+                      {node.name}
+                    </div>
+                    <div className="text-[9px] text-gray-400 truncate">{node.type}</div>
+                  </div>
+                </div>
+
+                <div className="text-[9px] font-mono text-gray-400 bg-black/30 px-1.5 py-0.5 rounded border border-white/5 truncate mb-1">
+                  {node.records}
+                </div>
+
+                {/* Dynamic Status / Weight indicator */}
+                <div className="flex items-center justify-between text-[9px] font-mono">
+                  {flStep === 'idle' && (
+                    <span className="text-gray-400 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-teal-400" /> Standby
+                    </span>
+                  )}
+                  {flStep === 'local_training' && (
+                    <span className="text-saffron-400 font-semibold animate-pulse flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-saffron-400 animate-ping" /> Epoch 3/3
+                    </span>
+                  )}
+                  {flStep === 'homomorphic' && (
+                    <span className="text-teal-300 font-semibold flex items-center gap-1">
+                      <Lock size={9} /> {node.deltaWeight}
+                    </span>
+                  )}
+                  {flStep === 'aggregating' && (
+                    <span className="text-teal-300 font-semibold animate-pulse flex items-center gap-1">
+                      <Zap size={9} className="text-teal-400" /> Transmitting
+                    </span>
+                  )}
+                  {flStep === 'completed' && (
+                    <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                      <Check size={9} /> Synced
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Protocol Pipeline Stages */}
+        <div className="bg-navy-950/60 border border-white/10 rounded-2xl p-4">
+          <div className="text-[11px] font-bold text-gray-300 uppercase tracking-wider mb-3 flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <Activity size={14} className="text-teal-400" />
+              Federated Protocol Pipeline
+            </span>
+            <span className="font-mono text-[10px] text-gray-400">FedAvg Consensus Algorithm</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 text-xs">
+            {/* Step 1 */}
+            <div className={`p-3 rounded-xl border transition-all ${
+              flStep === 'local_training'
+                ? 'bg-saffron-500/10 border-saffron-500/40 text-white shadow-md ring-1 ring-saffron-500/30'
+                : flStep === 'homomorphic' || flStep === 'aggregating' || flStep === 'completed'
+                ? 'bg-white/5 border-emerald-500/30 text-gray-300'
+                : 'bg-white/5 border-white/5 text-gray-500'
+            }`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-mono text-[10px] font-bold text-saffron-400">01 / LOCAL SGD</span>
+                {(flStep === 'homomorphic' || flStep === 'aggregating' || flStep === 'completed') && (
+                  <Check size={12} className="text-emerald-400" />
+                )}
+              </div>
+              <div className="font-medium text-[11px] text-white">Edge Training</div>
+              <p className="text-[10px] text-gray-400 mt-1 leading-snug">Calculates gradients over local biometric records without raw data sharing.</p>
+            </div>
+
+            {/* Step 2 */}
+            <div className={`p-3 rounded-xl border transition-all ${
+              flStep === 'homomorphic'
+                ? 'bg-teal-500/10 border-teal-500/40 text-white shadow-md ring-1 ring-teal-500/30'
+                : flStep === 'aggregating' || flStep === 'completed'
+                ? 'bg-white/5 border-emerald-500/30 text-gray-300'
+                : 'bg-white/5 border-white/5 text-gray-500'
+            }`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-mono text-[10px] font-bold text-teal-400">02 / PRIVACY</span>
+                {(flStep === 'aggregating' || flStep === 'completed') && (
+                  <Check size={12} className="text-emerald-400" />
+                )}
+              </div>
+              <div className="font-medium text-[11px] text-white">DP & Encryption</div>
+              <p className="text-[10px] text-gray-400 mt-1 leading-snug">Adds differential privacy noise (ε=1.2) and encrypts tensor weights via Paillier.</p>
+            </div>
+
+            {/* Step 3 */}
+            <div className={`p-3 rounded-xl border transition-all ${
+              flStep === 'aggregating'
+                ? 'bg-teal-500/10 border-teal-500/40 text-white shadow-md ring-1 ring-teal-500/30 animate-pulse'
+                : flStep === 'completed'
+                ? 'bg-white/5 border-emerald-500/30 text-gray-300'
+                : 'bg-white/5 border-white/5 text-gray-500'
+            }`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-mono text-[10px] font-bold text-teal-400">03 / INGRESS</span>
+                {flStep === 'completed' && (
+                  <Check size={12} className="text-emerald-400" />
+                )}
+              </div>
+              <div className="font-medium text-[11px] text-white">FedAvg Aggregation</div>
+              <p className="text-[10px] text-gray-400 mt-1 leading-snug">Central node aggregates 5 encrypted gradient updates without decrypting individual sources.</p>
+            </div>
+
+            {/* Step 4 */}
+            <div className={`p-3 rounded-xl border transition-all ${
+              flStep === 'completed'
+                ? 'bg-emerald-500/15 border-emerald-500/50 text-white shadow-md ring-1 ring-emerald-500/30'
+                : 'bg-white/5 border-white/5 text-gray-500'
+            }`}>
+              <div className="flex items-center justify-between mb-1">
+                <span className="font-mono text-[10px] font-bold text-emerald-400">04 / DISPATCH</span>
+                {flStep === 'completed' && (
+                  <Check size={12} className="text-emerald-400" />
+                )}
+              </div>
+              <div className="font-medium text-[11px] text-white">Model Convergence</div>
+              <p className="text-[10px] text-gray-400 mt-1 leading-snug">Updated global model weights broadcast back to edge devices. Accuracy improved.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Technical Architecture Metric Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl">
+            <div className="text-gray-400 text-[10px] uppercase tracking-wider font-mono">Consensus Protocol</div>
+            <div className="text-sm font-bold text-white mt-1">FedAvg (McMahan)</div>
+            <div className="text-[10px] text-teal-400 font-mono mt-0.5">Decentralized SGD</div>
+          </div>
+          <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl">
+            <div className="text-gray-400 text-[10px] uppercase tracking-wider font-mono">Privacy Guarantee</div>
+            <div className="text-sm font-bold text-white mt-1">ε = 1.2, δ = 10⁻⁵</div>
+            <div className="text-[10px] text-emerald-400 font-mono mt-0.5">Rényi Differential Privacy</div>
+          </div>
+          <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl">
+            <div className="text-gray-400 text-[10px] uppercase tracking-wider font-mono">Mesh Participants</div>
+            <div className="text-sm font-bold text-white mt-1">5 Edge Devices</div>
+            <div className="text-[10px] text-saffron-400 font-mono mt-0.5">100% Availability</div>
+          </div>
+          <div className="bg-white/5 border border-white/10 p-3.5 rounded-2xl">
+            <div className="text-gray-400 text-[10px] uppercase tracking-wider font-mono">Bandwidth Saved</div>
+            <div className="text-sm font-bold text-white mt-1">99.8% Reduction</div>
+            <div className="text-[10px] text-teal-400 font-mono mt-0.5">Tensors only, zero PHI</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
   if (vaultView === 'SECURITY') return <div className="flex flex-col h-[calc(100vh-100px)] bg-charcoal text-white rounded-3xl overflow-hidden border border-white/10 shadow-2xl relative"><VaultHeader title="Crypto-Security" subtitle="Audit & ZKP" icon={FileKey} onBack={() => setVaultView('MAIN')} /><div className="p-6"><button onClick={()=>triggerZKP('Age > 18')} className="bg-white/10 px-4 py-2 rounded mb-4">Gen ZKP</button><p className="text-xs text-green-400 mb-4">{zkpResult}</p>{auditLog.map(l=><div key={l.id} className="text-xs border-b border-white/10 py-2"><p>{l.action}</p><p className="text-gray-500">{l.hash}</p></div>)}</div></div>;
   if (vaultView === 'EMERGENCY') return <div className="flex flex-col h-[calc(100vh-100px)] bg-red-950 text-white rounded-3xl overflow-hidden border-4 border-red-600 relative"><div className="bg-red-800 p-4"><h2 className="font-bold">EMERGENCY DASHBOARD</h2></div><div className="p-6"><p>Blood: O+</p><p>Allergies: Penicillin</p></div></div>;
   if (vaultView === 'SDOH_ENGINE') {
