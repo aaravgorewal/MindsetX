@@ -6,6 +6,11 @@ Initializes and manages Qdrant client for vector memory storage
 import os
 import logging
 from typing import List, Optional, Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env immediately
+load_dotenv()
+
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
 import uuid
@@ -18,12 +23,9 @@ logger = logging.getLogger(__name__)
 # Using Qdrant Cloud instance with credentials
 QDRANT_URL = os.getenv(
     "QDRANT_URL", 
-    "https://eae25781-9692-48dd-a657-10bc8c0874db.us-east4-0.gcp.cloud.qdrant.io:6333"
+    "https://314a50f1-6411-4aab-9147-2953bffd4c9c.australia-southeast1-0.gcp.cloud.qdrant.io:6333"
 )
-QDRANT_API_KEY = os.getenv(
-    "QDRANT_API_KEY",
-    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.YaMCJ4-ePHYX7jCmxuEFrRqP0jMGoBN5HY_gV9JmkY0"
-)
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", None)
 
 # Legacy local configuration (kept for backward compatibility)
 QDRANT_PATH = os.getenv("QDRANT_PATH", "./qdrant_data")

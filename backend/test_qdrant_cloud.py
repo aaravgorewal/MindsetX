@@ -2,11 +2,14 @@
 Test script to verify Qdrant Cloud connection
 """
 
+import os
+from dotenv import load_dotenv
+load_dotenv()
 from qdrant_client import QdrantClient
 
 # Qdrant Cloud credentials
-QDRANT_URL = "https://eae25781-9692-48dd-a657-10bc8c0874db.us-east4-0.gcp.cloud.qdrant.io:6333"
-QDRANT_API_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.YaMCJ4-ePHYX7jCmxuEFrRqP0jMGoBN5HY_gV9JmkY0"
+QDRANT_URL = os.getenv("QDRANT_URL", "https://314a50f1-6411-4aab-9147-2953bffd4c9c.australia-southeast1-0.gcp.cloud.qdrant.io:6333")
+QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
 
 def test_qdrant_cloud_connection():
     """Test connection to Qdrant Cloud"""
