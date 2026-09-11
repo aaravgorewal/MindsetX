@@ -57,42 +57,136 @@ class Strategist:
         self,
         drift_state: str,
         memory_hits: list = None,
+        user_message: Optional[str] = None,
+        sentiment: float = 0.0,
+        drift_score: float = 0.0,
     ) -> dict:
         """
-        Generate a user-facing reply and action list based on the drift state
-        produced by Auditor.compute_drift().
+        Generate a user-facing reply and action list that dynamically reflects
+        the user's message content, emotional tone, and psychological drift.
 
         Args:
             drift_state:  "stable" | "early_warning" | "high_risk" | "no_history"
             memory_hits:  (optional) list of past similar messages for context.
+            user_message: (optional) text of the user's current message.
+            sentiment:    (optional) polarity score (-1.0 to 1.0).
+            drift_score:  (optional) numerical drift score.
 
         Returns:
             {"message": str, "actions": List[str]}
         """
-        responses = {
-            "stable": {
-                "message": "You're doing well. Here are some light wellness tips.",
-                "actions": ["mindfulness_nudge", "studio_recommendation"],
-            },
-            "early_warning": {
-                "message": "It looks like stress is increasing. Try these steps.",
-                "actions": ["journaling_prompt", "sleep_hygiene", "soft_counselor_prompt"],
-            },
-            "high_risk": {
-                "message": "You're not alone. Immediate help is available.",
+        text = (user_message or "").lower().strip()
+
+        # 1. IMMEDIATE CRISIS CHECK
+        crisis_keywords = ["suicide", "kill myself", "end my life", "harm myself", "want to die", "ending it all"]
+        if any(kw in text for kw in crisis_keywords):
+            return {
+                "message": (
+                    "I am deeply concerned about you and want to ensure you are safe. "
+                    "You do not have to carry this alone. Please reach out right now: "
+                    "call the National Tele-MANAS helpline at 14416 (available 24/7) or contact "
+                    "your campus wellness counselor or a trusted loved one immediately."
+                ),
                 "actions": ["tele_manas", "urgent_counselor", "human_alert"],
-            },
-            "no_history": {
-                "message": "Welcome. Let's start with a mental health check.",
-                "actions": ["phq9_prompt"],
-            },
+            }
+
+        # 2. TOPIC DETECTION FOR MESSAGE-AWARE REFLECTION
+        has_sleep = any(w in text for w in ["sleep", "cant sleep", "can't sleep", "insomnia", "tired", "awake", "exhausted", "sleepless"])
+        has_anxiety = any(w in text for w in ["anxious", "anxiety", "panic", "worried", "worry", "racing thoughts", "scared", "fear", "nervous"])
+        has_overwhelm = any(w in text for w in ["overwhelmed", "overwhelming", "too much", "breaking down", "awful", "terrible", "burnout", "drowning"])
+        has_stress = any(w in text for w in ["stressed", "stress", "pressure", "deadline", "exam", "test", "assignment", "grades", "college", "failing"])
+        has_depression = any(w in text for w in ["depressed", "depression", "sad", "hopeless", "worthless", "empty", "lonely", "alone", "crying", "miserable"])
+        has_positive = any(w in text for w in ["better", "good", "happy", "relieved", "calm", "grateful", "improving", "fine"])
+
+        # 3. CRAFT DYNAMIC CONTENT-REFLECTIVE MESSAGE
+        reply_message = ""
+        actions = []
+
+        if has_sleep and (has_stress or has_anxiety):
+            reply_message = (
+                "I hear how draining it is when stress and anxiety keep you from sleeping. "
+                "When your mind won't quiet down at night, the next day feels so much heavier. "
+                "Let's focus on calming your nervous system tonight—would you like to try a 4-7-8 breathing exercise "
+                "or look at a gentle wind-down routine?"
+            )
+            actions = ["sleep_hygiene", "mindfulness_nudge", "soft_counselor_prompt"]
+
+        elif has_overwhelm or ("awful" in text):
+            reply_message = (
+                "I'm so sorry you're feeling this awful and completely overwhelmed. "
+                "When everything piles up all at once, your body and mind go into survival overdrive. "
+                "You don't have to resolve everything today. Let's take just one slow breath together. "
+                "What feels like the heaviest thing on your mind right now?"
+            )
+            actions = ["journaling_prompt", "soft_counselor_prompt"]
+
+        elif has_anxiety:
+            reply_message = (
+                "It sounds like anxiety is running really high right now. "
+                "Remember that what you're feeling in your body is an alarm response, not a sign that you are broken. "
+                "Can you feel your feet flat on the floor right now? Let's take 30 seconds to ground ourselves."
+            )
+            actions = ["mindfulness_nudge", "journaling_prompt"]
+
+        elif has_stress:
+            reply_message = (
+                "That sounds like a tremendous amount of stress you're carrying. "
+                "Juggling heavy demands can make you feel stretched to your limit. "
+                "Let's pause the pressure for a moment—is there one small thing we can set aside for today?"
+            )
+            actions = ["mindfulness_nudge", "studio_recommendation"]
+
+        elif has_depression:
+            reply_message = (
+                "Thank you for trusting me with how low you're feeling. "
+                "Feeling this way can make you feel completely isolated, but your feelings are valid and you are not alone. "
+                "I'm here to listen without judgment whenever you're ready to share."
+            )
+            actions = ["soft_counselor_prompt", "phq9_prompt"]
+
+        elif has_positive:
+            reply_message = (
+                "It's really wonderful to hear that things are feeling a bit lighter! "
+                "Acknowledging these positive moments—even small ones—builds your resilience. "
+                "What helped you feel more at ease today?"
+            )
+            actions = ["mindfulness_nudge", "studio_recommendation"]
+
+        else:
+            # Fallback based on sentiment and drift
+            if sentiment < -0.3:
+                reply_message = (
+                    f"I can sense how much weight is behind what you're saying. "
+                    "I'm right here with you—could you tell me a little more about what's been going on?"
+                )
+                actions = ["soft_counselor_prompt"]
+            elif sentiment > 0.3:
+                reply_message = (
+                    "Thank you for sharing that with me! It sounds like things are going in a constructive direction. "
+                    "How can I best support you today?"
+                )
+                actions = ["mindfulness_nudge"]
+            else:
+                reply_message = (
+                    "Thank you for opening up. I'm here to support your mental wellness every step of the way. "
+                    "How has this been impacting your daily energy?"
+                )
+                actions = ["phq9_prompt" if drift_state == "no_history" else "mindfulness_nudge"]
+
+        # 4. TAILOR ACTIONS TO DRIFT STATE
+        if drift_state == "high_risk":
+            actions = ["tele_manas", "urgent_counselor", "human_alert"]
+        elif drift_state == "early_warning":
+            if "soft_counselor_prompt" not in actions:
+                actions.append("soft_counselor_prompt")
+        elif drift_state == "no_history" and "phq9_prompt" not in actions:
+            actions.append("phq9_prompt")
+
+        logger.info(f"🎯 Dynamic Strategy generated for drift='{drift_state}': actions={actions}")
+        return {
+            "message": reply_message,
+            "actions": actions,
         }
-        result = responses.get(
-            drift_state,
-            {"message": "I'm here to support you.", "actions": ["phq9_prompt"]},
-        )
-        logger.info(f"🎯 Strategy for drift_state='{drift_state}': {result['actions']}")
-        return result
 
     # ── Async planning methods ─────────────────────────────────────────────────────
 
