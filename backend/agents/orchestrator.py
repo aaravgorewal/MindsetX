@@ -42,17 +42,15 @@ class MASOrchestrator:
         user_id: str,
         message: str,
         session_id: Optional[str] = None,
+        sentiment: float = 0.0,
     ) -> Dict[str, Any]:
         """
-        Full MAS pipeline for a single chat turn.
-
-        Returns:
-            {
-                "reply":       str   – strategy message for the user,
-                "drift_score": float – cosine similarity vs. baseline (0–1),
-                "drift_state": str   – "stable" | "early_warning" | "high_risk" | "no_history",
-                "actions":     list  – recommended action slugs,
-            }
+        Full MAS pipeline for a single chat turn:
+          1. Embed incoming message
+          2. Retrieve past messages for baseline (BEFORE storing current turn)
+          3. Store current turn into Archivist memory
+          4. Compute cosine drift against baseline history
+          5. Strategist produces a contextual, message-aware response + actions
         """
         import uuid
         session_id = session_id or str(uuid.uuid4())
@@ -64,32 +62,39 @@ class MASOrchestrator:
             logger.error(f"Embedding failed: {e}")
             return self._fallback_response(str(e))
 
-        # ── 2. Store message in Archivist memory ───────────────────────────────
-        try:
-            await self.archivist.store_message(
-                user_id=user_id,
-                session_id=session_id,
-                message=message,
-                embedding=current_vec,
-                metadata={"source": "chat"},
-            )
-        except Exception as e:
-            logger.warning(f"Archivist store failed (non-fatal): {e}")
-
-        # ── 3. Retrieve similar past messages for baseline ─────────────────────
+        # ── 2. Retrieve past messages for baseline (BEFORE storing current message) ─
         baseline_vecs: list = []
+        similar: list = []
         try:
             similar = await self.archivist.retrieve_similar_messages(
                 embedding=current_vec,
                 user_id=user_id,
                 limit=5,
             )
-            # similar is a list of dicts; we need their raw vectors from Qdrant.
-            # retrieve_similar_messages returns scored hits but not raw vectors.
-            # Audit drift uses the payload text re-embedded as a proxy baseline.
+            print(f"🔍 [Archivist.retrieve] session_id='{session_id}' found {len(similar)} past records")
+            logger.info(f"🔍 [Archivist.retrieve] session_id='{session_id}' found {len(similar)} past records")
+            for idx, hit in enumerate(similar):
+                print(f"   [{idx}] score={hit.get('score', 0):.4f} msg='{hit.get('message', '')}'")
+            # Audit drift uses past messages re-embedded as baseline
             baseline_vecs = [embed_text(hit["message"]) for hit in similar if hit.get("message")]
         except Exception as e:
+            print(f"⚠️ [Archivist.retrieve] Retrieval failed: {e}")
             logger.warning(f"Archivist retrieve failed (non-fatal): {e}")
+
+        # ── 3. Store message in Archivist memory ───────────────────────────────
+        try:
+            stored = await self.archivist.store_message(
+                user_id=user_id,
+                session_id=session_id,
+                message=message,
+                embedding=current_vec,
+                metadata={"source": "chat", "sentiment": sentiment},
+            )
+            print(f"💾 [Archivist.store] user_id='{user_id}' session_id='{session_id}' stored={stored}")
+            logger.info(f"💾 [Archivist.store] user_id='{user_id}' session_id='{session_id}' stored={stored}")
+        except Exception as e:
+            print(f"⚠️ [Archivist.store] Storage failed: {e}")
+            logger.warning(f"Archivist store failed (non-fatal): {e}")
 
         # ── 4. Compute drift ───────────────────────────────────────────────────
         try:
@@ -98,15 +103,22 @@ class MASOrchestrator:
             logger.warning(f"Drift computation failed (non-fatal): {e}")
             drift_score, drift_state = 0.0, "no_history"
 
-        logger.info(f"🌊 Drift — score={drift_score:.3f} state={drift_state}")
+        print(f"🌊 [Auditor.drift] score={drift_score:.4f} state='{drift_state}' (baseline_count={len(baseline_vecs)})")
+        logger.info(f"🌊 [Auditor.drift] score={drift_score:.4f} state='{drift_state}' (baseline_count={len(baseline_vecs)})")
 
-        # ── 5. Generate strategy ───────────────────────────────────────────────
+        # ── 5. Generate dynamic strategy response ─────────────────────────────
         try:
-            strategy = self.strategist.generate_response(drift_state)
+            strategy = self.strategist.generate_response(
+                drift_state=drift_state,
+                drift_score=drift_score,
+                user_message=message,
+                sentiment=sentiment,
+                memory_hits=similar,
+            )
         except Exception as e:
             logger.warning(f"Strategy generation failed: {e}")
             strategy = {
-                "message": "I'm here to help. How are you feeling?",
+                "message": f"I hear you. Dealing with '{message[:50]}' is tough. I'm right here with you.",
                 "actions": ["phq9_prompt"],
             }
 
