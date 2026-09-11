@@ -352,22 +352,21 @@ export const analyzeSDoH = async (
   message: string,
   location?: { lat: number; lng: number },
   fileData?: { mimeType: string; data: string }
-) => {
+): Promise<{ text: string; urls: string[]; provider: 'gemini' | 'openai' | 'offline-template' }> => {
   const ai = getAIClient();
   if (!ai) {
     console.warn("[analyzeSDoH] AI client not initialized, returning synthesized clinical report.");
     return {
       text: generateClinicalSDoHReport(message, location),
-      urls: []
+      urls: [],
+      provider: 'offline-template'
     };
   }
 
-  // Model hierarchy using valid Gemini models:
-  // Primary: gemini-2.5-flash
-  // Fallbacks: gemini-2.0-flash, gemini-3-flash-preview
-  const primaryModel = 'gemini-2.5-flash';
-  const fallbackModel = 'gemini-2.0-flash';
-  const alternateModel = 'gemini-3-flash-preview';
+  // Confirmed working model for this API key (as of 2026-09-11).
+  // gemini-2.5-flash and gemini-2.0-flash are deprecated/404 for new accounts;
+  // gemini-3.6-flash is the current stable alias.
+  const primaryModel = 'gemini-3.6-flash';
 
   const systemPrompt = `
 You are the "SDoH-Integrated Diagnostic Engine" for MindSet X.
@@ -437,14 +436,12 @@ Format the output clearly:
 
     const text = extractCandidateText(response);
     if (text) {
-      return {
-        text,
-        urls: extractGroundingUrls(response)
-      };
+      console.log("[analyzeSDoH] Tier 1 (gemini+search+maps) succeeded.");
+      return { text, urls: extractGroundingUrls(response), provider: 'gemini' };
     }
-    console.warn("Primary Tier 1 returned empty text, progressing to fallback...");
+    console.warn("Tier 1 returned empty text, trying Tier 2...");
   } catch (mapsErr) {
-    console.warn("SDoH Google Maps grounding failed or unavailable, retrying with Google Search only...", mapsErr);
+    console.warn("Tier 1 (Maps+Search) failed:", mapsErr);
   }
 
   // Tier 2: Retry with only googleSearch on primary model
@@ -462,60 +459,76 @@ Format the output clearly:
 
     const text = extractCandidateText(fallbackResponse);
     if (text) {
-      return {
-        text,
-        urls: extractGroundingUrls(fallbackResponse)
-      };
+      console.log("[analyzeSDoH] Tier 2 (gemini+search) succeeded.");
+      return { text, urls: extractGroundingUrls(fallbackResponse), provider: 'gemini' };
     }
+    console.warn("Tier 2 returned empty text, trying Tier 3...");
   } catch (searchErr) {
-    console.warn("Tier 2 search failed, retrying with fallback model...", searchErr);
+    console.warn("Tier 2 (Search only) failed:", searchErr);
   }
 
-  // Tier 3: Retry with fallback model + googleSearch
-  try {
-    const fallbackModelResponse = await ai.models.generateContent({
-      model: fallbackModel,
-      contents: allContents,
-      config: searchOnlyConfig
-    });
-
-    const text = extractCandidateText(fallbackModelResponse);
-    if (text) {
-      return {
-        text,
-        urls: extractGroundingUrls(fallbackModelResponse)
-      };
-    }
-  } catch (tier3Err) {
-    console.warn("Tier 3 search failed, retrying with alternate model...", tier3Err);
-  }
-
-  // Tier 4: Direct clinical reasoning with alternate model (no tools to avoid quota exhaustion)
+  // Tier 3: Direct inference — no grounding tools (avoids quota on tool calls)
   try {
     const directResponse = await ai.models.generateContent({
-      model: alternateModel,
+      model: primaryModel,
       contents: allContents,
-      config: {
-        systemInstruction: systemPrompt
-      }
+      config: { systemInstruction: systemPrompt }
     });
 
     const text = extractCandidateText(directResponse);
     if (text) {
-      return {
-        text,
-        urls: []
-      };
+      console.log("[analyzeSDoH] Tier 3 (gemini direct) succeeded.");
+      return { text, urls: [], provider: 'gemini' };
     }
-  } catch (tier4Err) {
-    console.warn("Tier 4 direct inference failed or quota reached:", tier4Err);
+    console.warn("Tier 3 returned empty text, trying OpenAI Tier 4...");
+  } catch (tier3Err) {
+    console.warn("Tier 3 (direct) failed:", tier3Err);
   }
 
-  // Tier 5 (Ultimate Resilience): Generate structured clinical SDoH report
-  console.info("Using resilient SDoH diagnostic report fallback.");
+  // Tier 4: OpenAI gpt-4o-mini backup
+  // OPENAI_API_KEY must be set in .env as VITE_OPENAI_API_KEY (Vite exposes VITE_* vars to the browser).
+  // Never log the key anywhere.
+  try {
+    const openaiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || '';
+    if (openaiKey) {
+      const { OpenAI } = await import('openai');
+      const openai = new OpenAI({ apiKey: openaiKey, dangerouslyAllowBrowser: true });
+
+      const symptomText = messageWithLocation;
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          // Include last 4 turns of history for context
+          ...history.slice(-4).map((h: any) => ({
+            role: h.role === 'model' ? 'assistant' : 'user' as 'user' | 'assistant',
+            content: h.parts?.map((p: any) => p.text || '').join('\n') || ''
+          })),
+          { role: 'user', content: symptomText }
+        ],
+        temperature: 0.7,
+        max_tokens: 1200
+      });
+
+      const text = completion.choices?.[0]?.message?.content?.trim();
+      if (text) {
+        console.log("[analyzeSDoH] Tier 4 (OpenAI gpt-4o-mini) succeeded.");
+        return { text, urls: [], provider: 'openai' };
+      }
+      console.warn("OpenAI returned empty content, falling back to offline template.");
+    } else {
+      console.warn("[analyzeSDoH] VITE_OPENAI_API_KEY not set, skipping OpenAI tier.");
+    }
+  } catch (openaiErr) {
+    console.warn("Tier 4 (OpenAI) failed:", openaiErr);
+  }
+
+  // Tier 5 (Offline Template): Always-available clinical SDoH report
+  console.info("[analyzeSDoH] All AI tiers exhausted — using offline clinical template.");
   return {
     text: generateClinicalSDoHReport(message, location),
-    urls: []
+    urls: [],
+    provider: 'offline-template'
   };
 };
 

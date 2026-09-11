@@ -398,7 +398,8 @@ const SafeBioVault: React.FC = () => {
               id: (Date.now() + 1).toString(),
               role: 'model',
               text: response?.text || "Error: No diagnostic data returned from SDoH engine.",
-              groundingUrls: response?.urls || []
+              groundingUrls: response?.urls || [],
+              provider: response?.provider
           };
 
           setSdohMessages(prev => [...prev, botMsg]);
@@ -790,6 +791,27 @@ const SafeBioVault: React.FC = () => {
                         );
                       })}
                     </div>
+                  </div>
+                )}
+
+                {/* Provider badge — shown on AI (model) messages only */}
+                {msg.role === 'model' && !msg.isError && msg.provider && (
+                  <div className="mt-2">
+                    {msg.provider === 'gemini' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-teal-300 bg-teal-500/10 border border-teal-500/20 px-2 py-0.5 rounded-full">
+                        ✦ GROUNDED · Gemini
+                      </span>
+                    )}
+                    {msg.provider === 'openai' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full">
+                        ⚡ Generated via backup model
+                      </span>
+                    )}
+                    {msg.provider === 'offline-template' && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-orange-300 bg-orange-500/10 border border-orange-500/25 px-2 py-0.5 rounded-full">
+                        ⚠ Offline estimate — no live data
+                      </span>
+                    )}
                   </div>
                 )}
               </div>

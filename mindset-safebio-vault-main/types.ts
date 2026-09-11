@@ -25,6 +25,8 @@ export interface ChatMessage {
   isError?: boolean;
   options?: MessageOption[];
   sentimentScore?: number; // -1.0 to 1.0
+  /** Which AI provider generated this SDoH response */
+  provider?: 'gemini' | 'openai' | 'offline-template';
 }
 
 export interface MoodEntry {
