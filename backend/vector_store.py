@@ -39,8 +39,19 @@ COLLECTION_WELLNESS_CONTENT = "wellness_content"
 COLLECTION_BIO_CONSENT_LOGS = "bio_consent_logs"
 VECTOR_SIZE = 384  # Standard embedding size (can be adjusted based on your embeddings)
 
-# Global Qdrant client instance
+# Global Qdrant client instance and status tracking
 _client: Optional[QdrantClient] = None
+_qdrant_status: Dict[str, Any] = {
+    "mode": "uninitialized",
+    "configured_url": QDRANT_URL,
+    "active_storage": None,
+    "error": None,
+}
+
+
+def get_qdrant_status() -> Dict[str, Any]:
+    """Return live status of the Qdrant connection."""
+    return _qdrant_status
 
 
 def get_qdrant_client() -> QdrantClient:
@@ -51,46 +62,74 @@ def get_qdrant_client() -> QdrantClient:
     Configuration priority:
     1. QDRANT_URL + QDRANT_API_KEY (Cloud - PRIMARY)
     2. QDRANT_HOST + QDRANT_PORT + QDRANT_API_KEY (Remote)
-    3. QDRANT_PATH (Local)
+    3. QDRANT_PATH (Local Persistent Mode)
     """
-    global _client
+    global _client, _qdrant_status
     
     if _client is not None:
         return _client
     
-    try:
-        # PRIMARY: Qdrant Cloud mode (using URL)
-        if QDRANT_URL and QDRANT_API_KEY:
-            logger.info(f"🌥️ Connecting to Qdrant Cloud: {QDRANT_URL}")
-            _client = QdrantClient(
+    # 1. PRIMARY: Qdrant Cloud mode (using URL + API Key)
+    if QDRANT_URL and QDRANT_API_KEY:
+        logger.info(f"🌥️ Connecting to Qdrant Cloud: {QDRANT_URL}")
+        try:
+            cloud_client = QdrantClient(
                 url=QDRANT_URL,
                 api_key=QDRANT_API_KEY,
                 prefer_grpc=False,
-                timeout=30,
+                timeout=5,
             )
-            logger.info("✅ Connected to Qdrant Cloud successfully")
-        # SECONDARY: Remote server mode
-        elif QDRANT_HOST:
+            # Live verification ping to ensure cluster is reachable
+            cloud_client.get_collections()
+            _client = cloud_client
+            _qdrant_status["mode"] = "Qdrant Cloud (Active)"
+            _qdrant_status["active_storage"] = QDRANT_URL
+            _qdrant_status["error"] = None
+            logger.info("✅ Verified active connection to Qdrant Cloud")
+            return _client
+        except Exception as e:
+            err_str = str(e)
+            logger.warning(
+                f"❌ Qdrant Cloud connection failed: {err_str}. "
+                f"Falling back to local persistent storage at {QDRANT_PATH}"
+            )
+            _qdrant_status["error"] = err_str
+
+    # 2. SECONDARY: Remote server mode
+    if QDRANT_HOST:
+        try:
             logger.info(f"📡 Connecting to remote Qdrant at {QDRANT_HOST}:{QDRANT_PORT}")
-            _client = QdrantClient(
+            remote_client = QdrantClient(
                 host=QDRANT_HOST,
                 port=QDRANT_PORT,
                 api_key=QDRANT_API_KEY,
-                prefer_grpc=True
+                prefer_grpc=True,
+                timeout=5,
             )
+            remote_client.get_collections()
+            _client = remote_client
+            _qdrant_status["mode"] = "Qdrant Remote (Active)"
+            _qdrant_status["active_storage"] = f"{QDRANT_HOST}:{QDRANT_PORT}"
+            _qdrant_status["error"] = None
             logger.info("✅ Connected to remote Qdrant successfully")
-        # FALLBACK: Local mode (embedded)
-        else:
-            logger.info(f"💾 Initializing Qdrant local mode at {QDRANT_PATH}")
-            _client = QdrantClient(path=QDRANT_PATH)
-            logger.info("✅ Initialized Qdrant local mode successfully")
-        
-        logger.info("✓ Qdrant client initialized successfully")
-        return _client
+            return _client
+        except Exception as e:
+            logger.warning(f"❌ Remote Qdrant connection failed: {e}")
+            _qdrant_status["error"] = str(e)
+
+    # 3. FALLBACK: Local mode (embedded persistent storage)
+    os.makedirs(QDRANT_PATH, exist_ok=True)
+    logger.info(f"💾 Initializing Qdrant local persistent mode at {QDRANT_PATH}")
+    _client = QdrantClient(path=QDRANT_PATH)
     
-    except Exception as e:
-        logger.error(f"❌ Failed to initialize Qdrant client: {e}")
-        raise
+    if _qdrant_status["error"]:
+        _qdrant_status["mode"] = f"Qdrant Local Mode (Cloud Unreachable: {_qdrant_status['error']})"
+    else:
+        _qdrant_status["mode"] = "Qdrant Local Mode"
+    _qdrant_status["active_storage"] = os.path.abspath(QDRANT_PATH)
+    
+    logger.info(f"✅ Initialized Qdrant local mode successfully at {QDRANT_PATH}")
+    return _client
 
 
 def initialize_collections() -> None:
