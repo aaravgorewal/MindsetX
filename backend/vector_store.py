@@ -218,6 +218,27 @@ def initialize_collections() -> None:
             logger.info(f"✓ Collection '{COLLECTION_BIO_CONSENT_LOGS}' already exists")
         
         logger.info("All Qdrant collections initialized successfully")
+
+        # Ensure payload indexes exist for filtered scroll/search queries
+        try:
+            client.create_payload_index(
+                collection_name=COLLECTION_CHAT_MEMORY,
+                field_name="session_id",
+                field_schema="keyword"
+            )
+            logger.info(f"✓ Payload index 'session_id' ensured on '{COLLECTION_CHAT_MEMORY}'")
+        except Exception:
+            pass  # Index may already exist
+
+        try:
+            client.create_payload_index(
+                collection_name=COLLECTION_PHQ9_VECTORS,
+                field_name="student_id",
+                field_schema="keyword"
+            )
+            logger.info(f"✓ Payload index 'student_id' ensured on '{COLLECTION_PHQ9_VECTORS}'")
+        except Exception:
+            pass  # Index may already exist
     
     except Exception as e:
         logger.error(f"Failed to initialize collections: {e}")

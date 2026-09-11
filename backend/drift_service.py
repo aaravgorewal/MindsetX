@@ -266,14 +266,44 @@ def analyze_overall_drift(student_id: Optional[str] = None) -> Dict[str, Any]:
         chat_analysis = analyze_chat_drift(student_id, limit_history=10)
         phq9_analysis = analyze_phq9_drift(student_id, limit_history=5)
         
-        # Extract drift scores
-        chat_drift_score = chat_analysis.get("chat_drift", {}).get("drift_score", 0.5)
-        phq9_drift_score = phq9_analysis.get("phq9_drift", {}).get("drift_score", 0.5)
+        # Extract drift scores and statuses
+        chat_drift_data = chat_analysis.get("chat_drift", {})
+        phq9_drift_data = phq9_analysis.get("phq9_drift", {})
         
-        # Calculate weighted overall score (PHQ-9 weighted 60%, Chat 40%)
-        overall_drift_score = (phq9_drift_score * 0.6) + (chat_drift_score * 0.4)
+        chat_drift_score = chat_drift_data.get("drift_score", 0.0)
+        phq9_drift_score = phq9_drift_data.get("drift_score", 0.0)
+        chat_drift_status = chat_drift_data.get("drift_status", "no_data")
+        phq9_drift_status = phq9_drift_data.get("drift_status", "no_data")
         
-        # Determine overall status
+        # Statuses that indicate the sub-analysis has no meaningful data
+        NO_DATA_STATUSES = {"no_data", "insufficient_history", "insufficient_data", "error"}
+        
+        chat_has_data = chat_drift_status not in NO_DATA_STATUSES
+        phq9_has_data = phq9_drift_status not in NO_DATA_STATUSES
+        
+        # If neither source has real data, return no_data — NOT critical
+        if not chat_has_data and not phq9_has_data:
+            recommendations = ["Not enough historical data to assess drift. Continue logging sessions."]
+            return {
+                "timestamp": datetime.now().isoformat(),
+                "overall_drift_score": 0.0,
+                "overall_status": "no_data",
+                "alert_level": "green",
+                "chat_analysis": chat_analysis,
+                "phq9_analysis": phq9_analysis,
+                "recommendations": recommendations
+            }
+        
+        # Calculate weighted overall score — only use sources that have real data
+        if chat_has_data and phq9_has_data:
+            # Both have data: PHQ-9 weighted 60%, Chat 40%
+            overall_drift_score = (phq9_drift_score * 0.6) + (chat_drift_score * 0.4)
+        elif phq9_has_data:
+            overall_drift_score = phq9_drift_score
+        else:
+            overall_drift_score = chat_drift_score
+        
+        # Determine overall status from the computed score
         if overall_drift_score > DRIFT_THRESHOLDS["stable"]:
             overall_status = "stable"
             alert_level = "green"
@@ -287,8 +317,8 @@ def analyze_overall_drift(student_id: Optional[str] = None) -> Dict[str, Any]:
         # Generate recommendations
         recommendations = generate_recommendations(
             overall_status,
-            chat_analysis.get("chat_drift", {}),
-            phq9_analysis.get("phq9_drift", {}),
+            chat_drift_data,
+            phq9_drift_data,
             phq9_analysis.get("latest_assessment", {})
         )
         
@@ -307,7 +337,7 @@ def analyze_overall_drift(student_id: Optional[str] = None) -> Dict[str, Any]:
         return {
             "overall_drift_score": 0.0,
             "overall_status": "error",
-            "alert_level": "red",
+            "alert_level": "unknown",
             "error": str(e)
         }
 

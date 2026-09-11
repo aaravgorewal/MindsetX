@@ -220,7 +220,9 @@ class StudioService:
             # Post-process results
             processed_results = []
             for result in results:
-                payload = result.payload
+                payload = result.get("payload", {}) if isinstance(result, dict) else getattr(result, "payload", {})
+                vec_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
+                score = result.get("score", 0.0) if isinstance(result, dict) else getattr(result, "score", 0.0)
                 
                 # Apply category filter
                 if categories and payload.get("category") not in categories:
@@ -231,12 +233,12 @@ class StudioService:
                     continue
                 
                 processed_results.append({
-                    "vector_id": result.id,
+                    "vector_id": vec_id,
                     "title": payload.get("title"),
                     "description": payload.get("description"),
                     "category": payload.get("category"),
                     "difficulty": payload.get("difficulty"),
-                    "relevance_score": result.score,
+                    "relevance_score": score,
                     "created_at": payload.get("created_at"),
                 })
                 
@@ -401,7 +403,9 @@ class StudioService:
             
             content = []
             for result in results:
-                payload = result.payload
+                payload = result.get("payload", {}) if isinstance(result, dict) else getattr(result, "payload", {})
+                vec_id = result.get("id") if isinstance(result, dict) else getattr(result, "id", None)
+                score = result.get("score", 0.0) if isinstance(result, dict) else getattr(result, "score", 0.0)
                 
                 # Filter by category
                 if payload.get("category") != category:
@@ -412,12 +416,12 @@ class StudioService:
                     continue
                 
                 content.append({
-                    "vector_id": result.id,
+                    "vector_id": vec_id,
                     "title": payload.get("title"),
                     "description": payload.get("description"),
                     "category": category,
                     "difficulty": payload.get("difficulty"),
-                    "relevance_score": result.score,
+                    "relevance_score": score,
                 })
                 
                 if len(content) >= limit:

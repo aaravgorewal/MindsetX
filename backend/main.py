@@ -613,8 +613,12 @@ async def detect_drift(request: DriftRequest):
         # Map status to DriftState
         if overall_status == "stable":
             drift_state = DriftState.STABLE
+        elif overall_status == "no_data":
+            drift_state = DriftState.NO_DATA
         elif overall_status == "critical_drift":
             drift_state = DriftState.CRITICAL
+        elif overall_status == "error":
+            drift_state = DriftState.NO_DATA
         else:
             drift_state = DriftState.DRIFTING
         
@@ -822,6 +826,12 @@ def init_db():
         print("🚀 INITIALIZING QDRANT COLLECTIONS")
         print("="*60)
         initialize_collections()
+        from studio_service import StudioService
+        try:
+            seeded_wellness = StudioService.seed_wellness_content()
+            logger.info(f"Wellness library status: {seeded_wellness} items available")
+        except Exception as seed_err:
+            logger.warning(f"Wellness content seed notice: {seed_err}")
         print("✅ Qdrant collections initialized successfully")
         print("✅ Database initialization completed successfully")
         print("="*60 + "\n")
