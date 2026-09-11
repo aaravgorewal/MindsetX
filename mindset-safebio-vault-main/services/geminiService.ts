@@ -18,6 +18,34 @@ export const getAIClient = (key?: string) => {
   return new GoogleGenAI({ apiKey: effectiveKey });
 };
 
+// Safely extract text from a Gemini response without crashing on thought-only
+// or empty responses (avoids "model output must contain either output text or
+// tool calls" SDK error).
+const extractCandidateText = (res: any): string => {
+  // Fast path: SDK resolved .text successfully
+  try {
+    const t = res?.text;
+    if (typeof t === 'string' && t.trim()) return t.trim();
+  } catch (_) { /* .text getter can throw on thought-only responses */ }
+
+  // Slow path: walk the raw parts ourselves, skipping thought tokens
+  const parts: any[] = res?.candidates?.[0]?.content?.parts ?? [];
+  const visible = parts
+    .filter((p: any) => !p.thought && typeof p.text === 'string')
+    .map((p: any) => p.text)
+    .join('\n')
+    .trim();
+  if (visible) return visible;
+
+  // Last resort: include thought text if nothing else is available
+  const any = parts
+    .filter((p: any) => typeof p.text === 'string')
+    .map((p: any) => p.text)
+    .join('\n')
+    .trim();
+  return any;
+};
+
 // 1. Chat with Thinking (Triage) & Grounding
 export const sendChatMessage = async (
   history: { role: string; parts: { text: string }[] }[],
@@ -50,9 +78,11 @@ Format it exactly like this hidden tag: ||SENTIMENT:0.5||
 Do not mention this score in the text, just append the tag.
   `;
 
+  // Note: thinkingConfig is intentionally omitted — thought-only responses
+  // cause the SDK to throw "model output must contain either output text or
+  // tool calls" when .text is accessed.
   const config: any = {
     systemInstruction: systemPrompt,
-    thinkingConfig: { thinkingBudget: 1024 }, // Enable thinking for triage
     tools: tools.length > 0 ? tools : undefined,
   };
 
@@ -87,7 +117,7 @@ Do not mention this score in the text, just append the tag.
   }
 
   return {
-    text: result.text,
+    text: extractCandidateText(result),
     urls: urls
   };
 };
@@ -264,36 +294,14 @@ Include a specific medical fact about hormones or psychology but make it funny.
       }
     });
 
-    return response.text?.trim() || null;
+    return extractCandidateText(response) || null;
   } catch (error) {
     console.warn("Nudge generation failed", error);
     return null; // Will trigger fallback in components
   }
 };
 
-// Helper to safely extract candidate text from response without failing on thought tokens
-const extractCandidateText = (res: any): string => {
-  if (res?.text && typeof res.text === 'string' && res.text.trim()) {
-    return res.text.trim();
-  }
-  const candidate = res?.candidates?.[0];
-  if (candidate?.content?.parts && Array.isArray(candidate.content.parts)) {
-    const cleanText = candidate.content.parts
-      .filter((p: any) => !p.thought && typeof p.text === 'string')
-      .map((p: any) => p.text)
-      .join('\n')
-      .trim();
-    if (cleanText) return cleanText;
-
-    const anyText = candidate.content.parts
-      .filter((p: any) => typeof p.text === 'string')
-      .map((p: any) => p.text)
-      .join('\n')
-      .trim();
-    if (anyText) return anyText;
-  }
-  return '';
-};
+// (extractCandidateText is now defined near the top of the file)
 
 // Resilient SDoH Diagnostic Generator when remote API is unreachable or quota-exhausted
 const generateClinicalSDoHReport = (
@@ -544,7 +552,7 @@ Return ONLY valid JSON in this format:
     }
   });
 
-  return JSON.parse(response.text || "{}");
+  return JSON.parse(extractCandidateText(response) || "{}");
 };
 
 // 9. Digital Twin Simulation
@@ -567,12 +575,11 @@ Output a structured simulation result:
     model: modelId,
     contents: `Simulate effect of: ${drugName}. Patient Context: ${bioContext}`,
     config: {
-      systemInstruction: systemPrompt,
-      thinkingConfig: { thinkingBudget: 1024 }
+      systemInstruction: systemPrompt
     }
   });
 
-  return response.text;
+  return extractCandidateText(response);
 };
 
 // 10. Multi-Modal Diagnosis
@@ -614,7 +621,7 @@ Provide a concise, high-accuracy holistic analysis.
     config: { systemInstruction: systemPrompt }
   });
 
-  return response.text;
+  return extractCandidateText(response);
 };
 
 // 11. Federated Learning Simulation (Edge-Bio)
@@ -641,7 +648,7 @@ Mention "Quantized Model", "Local Epochs", and "Homomorphic Encryption".
     config: { systemInstruction: systemPrompt }
   });
 
-  return response.text;
+  return extractCandidateText(response);
 };
 
 // 12. Zero-Knowledge Proof Generator (Security)
@@ -665,7 +672,7 @@ Output:
     config: { systemInstruction: systemPrompt }
   });
 
-  return response.text;
+  return extractCandidateText(response);
 };
 
 // 13. FHIR Parser (Interoperability)
@@ -689,7 +696,7 @@ Return ONLY valid JSON.
     }
   });
 
-  return JSON.parse(response.text || "{}");
+  return JSON.parse(extractCandidateText(response) || "{}");
 };
 
 // 14. Health Lesson Generator
@@ -737,7 +744,7 @@ Structure the response exactly as follows:
     });
 
     return {
-      text: response.text || '',
+      text: extractCandidateText(response),
       image: undefined,
       video: undefined
     };
