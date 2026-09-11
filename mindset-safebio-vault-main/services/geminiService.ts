@@ -279,10 +279,13 @@ export const analyzeSDoH = async (
   fileData?: { mimeType: string; data: string }
 ) => {
   const ai = getAIClient();
-  // Maps grounding is strictly supported on Gemini 2.5 series
-  const modelId = 'gemini-2.5-flash'; 
+  if (!ai) {
+    throw new Error("Gemini AI client could not be initialized. Please check your API key.");
+  }
 
-  const tools: any[] = [{ googleSearch: {} }, { googleMaps: {} }];
+  // Maps grounding target model
+  const primaryModel = 'gemini-2.5-flash';
+  const modernModel = 'gemini-3.6-flash';
 
   const systemPrompt = `
 You are the "SDoH-Integrated Diagnostic Engine" for MindSet X.
@@ -300,23 +303,6 @@ Format the output clearly:
 - **SDoH Prescription**: [Actionable advice]
   `;
 
-  const config: any = {
-    systemInstruction: systemPrompt,
-    tools: tools,
-    thinkingConfig: { thinkingBudget: 1024 }
-  };
-
-  if (location) {
-    config.toolConfig = {
-      retrievalConfig: {
-        latLng: {
-          latitude: location.lat,
-          longitude: location.lng
-        }
-      }
-    };
-  }
-
   // Construct current message parts
   const currentParts: any[] = [{ text: message }];
   if (fileData) {
@@ -333,16 +319,97 @@ Format the output clearly:
     { role: 'user', parts: currentParts }
   ];
 
-  const response = await ai.models.generateContent({
-    model: modelId,
-    contents: allContents,
-    config: config
-  });
-
-  return {
-    text: response.text,
-    urls: response.candidates?.[0]?.groundingMetadata?.groundingChunks?.map((c:any) => c.web?.uri || c.maps?.uri).filter((u:any) => u) || []
+  const extractGroundingUrls = (res: any): string[] => {
+    return res.candidates?.[0]?.groundingMetadata?.groundingChunks
+      ?.map((c: any) => c.web?.uri || c.maps?.uri)
+      ?.filter((u: any): u is string => Boolean(u)) || [];
   };
+
+  // Attempt 1: Full grounding with googleSearch + googleMaps
+  const fullConfig: any = {
+    systemInstruction: systemPrompt,
+    tools: [{ googleSearch: {} }, { googleMaps: {} }],
+    thinkingConfig: { thinkingBudget: 1024 }
+  };
+
+  if (location) {
+    fullConfig.toolConfig = {
+      retrievalConfig: {
+        latLng: {
+          latitude: location.lat,
+          longitude: location.lng
+        }
+      }
+    };
+  }
+
+  try {
+    const response = await ai.models.generateContent({
+      model: primaryModel,
+      contents: allContents,
+      config: fullConfig
+    });
+
+    return {
+      text: response.text || '',
+      urls: extractGroundingUrls(response)
+    };
+  } catch (mapsErr) {
+    console.warn("SDoH Google Maps grounding failed or unavailable, retrying with Google Search only...", mapsErr);
+
+    // Attempt 2: Retry with only googleSearch (drop googleMaps and retrievalConfig)
+    const searchOnlyConfig: any = {
+      systemInstruction: systemPrompt,
+      tools: [{ googleSearch: {} }]
+    };
+
+    try {
+      const fallbackResponse = await ai.models.generateContent({
+        model: primaryModel,
+        contents: allContents,
+        config: searchOnlyConfig
+      });
+
+      return {
+        text: fallbackResponse.text || '',
+        urls: extractGroundingUrls(fallbackResponse)
+      };
+    } catch (searchErr) {
+      console.warn("Primary model search failed, retrying with modern model (gemini-3.6-flash)...", searchErr);
+
+      // Attempt 3: Retry with modern model + googleSearch
+      try {
+        const modernResponse = await ai.models.generateContent({
+          model: modernModel,
+          contents: allContents,
+          config: searchOnlyConfig
+        });
+
+        return {
+          text: modernResponse.text || '',
+          urls: extractGroundingUrls(modernResponse)
+        };
+      } catch (quotaErr) {
+        console.warn("Search grounding quota exhausted or unavailable. Retrying with direct clinical/environmental reasoning fallback...", quotaErr);
+
+        // Attempt 4: Resilient fallback without grounding tools
+        const directConfig: any = {
+          systemInstruction: systemPrompt
+        };
+
+        const directResponse = await ai.models.generateContent({
+          model: modernModel,
+          contents: allContents,
+          config: directConfig
+        });
+
+        return {
+          text: directResponse.text || '',
+          urls: []
+        };
+      }
+    }
+  }
 };
 
 // 8. Agentic AI Workflow
