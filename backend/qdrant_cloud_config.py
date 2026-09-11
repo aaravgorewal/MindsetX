@@ -8,10 +8,7 @@ QDRANT_CLOUD_CONFIG = {
         "QDRANT_URL",
         "https://314a50f1-6411-4aab-9147-2953bffd4c9c.australia-southeast1-0.gcp.cloud.qdrant.io:6333",
     ),
-    "api_key": os.getenv(
-        "QDRANT_API_KEY",
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIiwic3ViamVjdCI6ImFwaS1rZXk6ZTI0ZTY3NGQtMGFjZC00OWI5LWE3Y2MtMjZmNTM3YTFlZjdhIn0.yreArIKcRx6SCTmlkSR6ojrbbq4nG25cSVw-_qdzRQ",
-    ),
+    "api_key": os.getenv("QDRANT_API_KEY", ""),
     "region": "australia-southeast1-0",
     "provider": "gcp",
     "prefer_grpc": False,
