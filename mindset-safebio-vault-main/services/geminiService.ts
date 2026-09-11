@@ -568,6 +568,103 @@ Return ONLY valid JSON in this format:
   return JSON.parse(extractCandidateText(response) || "{}");
 };
 
+// 8b. Extract drug name from medicine photo using Gemini Vision
+export const extractDrugNameFromImage = async (
+  imageBase64: string,
+  mimeType: string
+): Promise<string> => {
+  const ai = getAIClient();
+
+  const systemPrompt = `You are a pharmaceutical OCR and image recognition specialist.
+Analyze the uploaded image of a medicine (pill box, blister strip, bottle label, or prescription).
+Extract ONLY the primary drug, medication, or compound name visible.
+
+Rules:
+1. Return ONLY the clean drug or compound name. No extra words, no introductory phrases, no markdown, no dosages (unless essential to compound identity), no punctuation.
+2. If multiple medications are visible, return the primary one, or format as "DrugA / DrugB".
+3. If brand name and generic name are visible, format as "BrandName (GenericName)".
+4. If the image is blurry, does not contain a discernible medicine/drug name, or is unreadable, return EXACTLY: UNREADABLE`;
+
+  const contents = {
+    parts: [
+      { text: 'What drug/medicine name is shown in this image?' },
+      { inlineData: { mimeType, data: imageBase64 } }
+    ]
+  };
+
+  // Tier 1: Gemini Vision (gemini-2.5-flash -> gemini-2.0-flash -> gemini-3-flash-preview -> active models)
+  const visionModels = [
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-3-flash-preview',
+    'gemini-3.5-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash'
+  ];
+
+  if (ai) {
+    for (const model of visionModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents,
+          config: { systemInstruction: systemPrompt }
+        });
+
+        const text = extractCandidateText(response).trim();
+        if (text === 'UNREADABLE') {
+          throw new Error("Couldn't read a drug name from this image — please type it manually.");
+        }
+        if (text) {
+          console.log(`[extractDrugNameFromImage] (${model}) extracted:`, text);
+          return text;
+        }
+      } catch (e: any) {
+        if (e.message?.includes("Couldn't read")) throw e; // Re-throw unreadable error
+        console.warn(`[extractDrugNameFromImage] ${model} failed:`, e?.status || e?.message?.slice(0, 100));
+      }
+    }
+  }
+
+  // Tier 2: OpenAI vision backup
+  try {
+    const openaiKey = (import.meta as any).env?.VITE_OPENAI_API_KEY || '';
+    if (openaiKey) {
+      const { OpenAI } = await import('openai');
+      const openai = new OpenAI({ apiKey: openaiKey, dangerouslyAllowBrowser: true });
+
+      const completion = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'What drug/medicine name is shown in this image?' },
+              { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } }
+            ]
+          }
+        ],
+        max_tokens: 100
+      });
+
+      const text = completion.choices?.[0]?.message?.content?.trim();
+      if (text === 'UNREADABLE') {
+        throw new Error("Couldn't read a drug name from this image — please type it manually.");
+      }
+      if (text) {
+        console.log("[extractDrugNameFromImage] OpenAI extracted:", text);
+        return text;
+      }
+    }
+  } catch (openaiErr: any) {
+    if (openaiErr.message?.includes("Couldn't read")) throw openaiErr;
+    console.warn("[extractDrugNameFromImage] OpenAI failed:", openaiErr);
+  }
+
+  throw new Error("Couldn't read a drug name from this image — please type it manually.");
+};
+
 // 9. Digital Twin Simulation
 export const simulateDigitalTwin = async (
   drugName: string,
@@ -581,10 +678,18 @@ You have access to a patient's virtual biological model including their bio-prof
 The user will input a Drug Name.
 You must SIMULATE the drug's interaction with THIS specific patient's profile.
 
+CRITICAL FORMATTING RULES:
+- Use ONLY ## headers to separate sections (no ###, no ####).
+- Use bullet points with **bold labels** for all data (e.g. "- **Heart Rate**: 72 → 68 bpm").
+- Do NOT use LaTeX or math notation (no $ symbols, no \\text{}, no subscripts/superscripts).
+- Do NOT use markdown tables (no | pipe characters for columns).
+- Write all numbers, units, and formulas in plain text (e.g. "PGE2", "T-onset ≈ 30 mins", "Cmax = 25 mcg/mL").
+- Keep formatting consistent across ALL sections.
+
 Structure your response with these exact markdown headers:
 
 ## Mechanism of Action
-Explain how this drug works at the molecular/receptor level. Be specific (e.g. COX-1/COX-2 inhibition, AMPK activation).
+Explain how this drug works at the molecular/receptor level. Be specific (e.g. COX-1/COX-2 inhibition, AMPK activation). Use plain text for all chemical names and pathways.
 
 ## Patient-Specific Effects
 Based on the patient's bio-context, explain:
@@ -600,35 +705,45 @@ Based on the patient's bio-context, explain:
 - Red flags that require immediate medical attention
 
 ## Simulated Response Timeline
-Show a timeline of expected physiological changes:
-- 0-30 min: [absorption phase]
-- 30-60 min: [onset of action]
-- 1-4 hrs: [peak effect]
-- 4-12 hrs: [sustained/declining]
-- 12-24 hrs: [clearance]
+Show a timeline of expected physiological changes as bullet points:
+- **0-30 min**: [absorption phase details]
+- **30-60 min**: [onset of action details]
+- **1-4 hrs**: [peak effect details]
+- **4-12 hrs**: [sustained/declining details]
+- **12-24 hrs**: [clearance details]
 
-Include estimated vital sign changes (heart rate, BP, temperature, blood glucose if relevant).
+Include estimated vital sign changes as bullet points (e.g. "- **Heart Rate**: 78 → 72 bpm", "- **Blood Pressure**: 130/85 → 125/80 mmHg").
   `;
 
   const userPrompt = `Simulate the effect of: ${drugName}\nPatient Bio-Context: ${bioContext}`;
 
-  // Tier 1: Gemini (gemini-3.6-flash — only working model for this API key)
-  if (ai) {
-    try {
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.6-flash',
-        contents: userPrompt,
-        config: { systemInstruction: systemPrompt }
-      });
+  // Tier 1: Gemini (gemini-2.5-flash -> gemini-2.0-flash -> gemini-3-flash-preview -> active models)
+  const simModels = [
+    'gemini-2.5-flash',
+    'gemini-2.0-flash',
+    'gemini-3-flash-preview',
+    'gemini-3.5-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash'
+  ];
 
-      const text = extractCandidateText(response);
-      if (text) {
-        console.log("[simulateDigitalTwin] Tier 1 (Gemini) succeeded.");
-        return { text, provider: 'gemini' };
+  if (ai) {
+    for (const model of simModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model,
+          contents: userPrompt,
+          config: { systemInstruction: systemPrompt }
+        });
+
+        const text = extractCandidateText(response);
+        if (text) {
+          console.log(`[simulateDigitalTwin] (${model}) succeeded.`);
+          return { text, provider: 'gemini' };
+        }
+      } catch (geminiErr: any) {
+        console.warn(`[simulateDigitalTwin] ${model} failed:`, geminiErr?.status || geminiErr?.message?.slice(0, 100));
       }
-      console.warn("[simulateDigitalTwin] Gemini returned empty text.");
-    } catch (geminiErr) {
-      console.warn("[simulateDigitalTwin] Tier 1 (Gemini) failed:", geminiErr);
     }
   }
 

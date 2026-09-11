@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Shield, FileText, Activity, Lock, AlertTriangle, CheckCircle, Plus, Fingerprint, Dna, Database, Server, ScanFace, X, Pill, DownloadCloud, EyeOff, Link, Brain, Hexagon, ChevronLeft, MapPin, Wind, Thermometer, CloudRain, Send, Paperclip, Bot, Layers, Microscope, Coins, Zap, Network, FileKey, Eye, Globe, Siren, QrCode, Stethoscope, TriangleAlert, UserCheck, BellRing, Timer, FileCheck, Clock } from 'lucide-react';
+import { Shield, FileText, Activity, Lock, AlertTriangle, CheckCircle, Plus, Fingerprint, Dna, Database, Server, ScanFace, X, Pill, DownloadCloud, EyeOff, Link, Brain, Hexagon, ChevronLeft, MapPin, Wind, Thermometer, CloudRain, Send, Paperclip, Bot, Layers, Microscope, Coins, Zap, Network, FileKey, Eye, Globe, Siren, QrCode, Stethoscope, TriangleAlert, UserCheck, BellRing, Timer, FileCheck, Clock, Camera } from 'lucide-react';
 import { DocumentItem, ChatMessage } from '../types';
-import { analyzeSDoH, runAgenticWorkflow, simulateDigitalTwin, analyzeMultiModal, runFederatedLearning, generateZKP, parseToFHIR } from '../services/geminiService';
+import { analyzeSDoH, runAgenticWorkflow, simulateDigitalTwin, extractDrugNameFromImage, analyzeMultiModal, runFederatedLearning, generateZKP, parseToFHIR } from '../services/geminiService';
 
 // --- SUB-COMPONENTS DEFINED OUTSIDE TO PREVENT RE-RENDER ISSUES ---
 
@@ -126,6 +126,10 @@ const SafeBioVault: React.FC = () => {
   const [isTwinLoading, setIsTwinLoading] = useState(false);
   const [twinProvider, setTwinProvider] = useState<'gemini' | 'openai' | 'offline-template' | null>(null);
   const [twinError, setTwinError] = useState<string>('');
+  const [twinImageFile, setTwinImageFile] = useState<{ file: File; preview: string } | null>(null);
+  const [isTwinExtracting, setIsTwinExtracting] = useState(false);
+  const [twinExtractedFrom, setTwinExtractedFrom] = useState<string>(''); // filename the name was extracted from
+  const twinFileInputRef = useRef<HTMLInputElement>(null);
   const [multiModalResult, setMultiModalResult] = useState('');
   const [mmTextInput, setMmTextInput] = useState('');
   
@@ -452,6 +456,39 @@ const SafeBioVault: React.FC = () => {
       }
   };
 
+  const handleTwinImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = ''; // reset so same file can be re-uploaded
+      if (!file) return;
+      if (!file.type.startsWith('image/')) {
+          setTwinError('Please upload an image file (JPG, PNG).');
+          return;
+      }
+
+      // Show preview
+      const reader = new FileReader();
+      reader.onload = async (ev) => {
+          const dataUrl = ev.target?.result as string;
+          setTwinImageFile({ file, preview: dataUrl });
+          setTwinError('');
+          setTwinExtractedFrom('');
+          setIsTwinExtracting(true);
+
+          try {
+              const base64 = dataUrl.split(',')[1];
+              const drugName = await extractDrugNameFromImage(base64, file.type);
+              setTwinInput(drugName);
+              setTwinExtractedFrom(file.name);
+          } catch (err: any) {
+              console.error('[Twin OCR] Error:', err);
+              setTwinError(err?.message || "Couldn't read a drug name from this image — please type it manually.");
+          } finally {
+              setIsTwinExtracting(false);
+          }
+      };
+      reader.readAsDataURL(file);
+  };
+
   const triggerMultiModal = async () => {
       if(!attachedFile || !mmTextInput) return;
       setIsSdohAnalyzing(true);
@@ -708,16 +745,35 @@ const SafeBioVault: React.FC = () => {
           <div className="flex gap-2">
             <input
               type="text"
-              className="flex-1 px-4 py-3 rounded-xl bg-white/10 border border-white/10 text-white placeholder-gray-500 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/30 transition-all text-sm"
+              className={`flex-1 px-4 py-3 rounded-xl bg-white/10 border text-white placeholder-gray-500 focus:outline-none focus:border-teal-500/50 focus:ring-1 focus:ring-teal-500/30 transition-all text-sm ${twinExtractedFrom ? 'border-teal-500/40' : 'border-white/10'}`}
               value={twinInput}
               onChange={e => { setTwinInput(e.target.value); if (twinError) setTwinError(''); }}
               onKeyDown={e => e.key === 'Enter' && triggerTwinSimulation()}
               placeholder="e.g. Ibuprofen, Metformin, Amoxicillin"
-              disabled={isTwinLoading}
+              disabled={isTwinLoading || isTwinExtracting}
+            />
+
+            {/* Camera / Upload button */}
+            <input
+              type="file"
+              ref={twinFileInputRef}
+              onChange={handleTwinImageUpload}
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
             />
             <button
+              type="button"
+              onClick={() => twinFileInputRef.current?.click()}
+              disabled={isTwinLoading || isTwinExtracting}
+              className="p-3 rounded-xl bg-white/5 border border-white/10 text-gray-400 hover:text-white hover:bg-white/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-none"
+              title="Upload medicine photo to auto-extract drug name"
+            >
+              <Camera size={18} />
+            </button>
+
+            <button
               onClick={triggerTwinSimulation}
-              disabled={isTwinLoading}
+              disabled={isTwinLoading || isTwinExtracting}
               className="px-6 py-3 bg-gradient-to-r from-teal-600 to-emerald-600 text-white font-semibold rounded-xl hover:from-teal-500 hover:to-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-sm shadow-lg shadow-teal-900/30 flex items-center gap-2"
             >
               {isTwinLoading ? (
@@ -727,6 +783,41 @@ const SafeBioVault: React.FC = () => {
               )}
             </button>
           </div>
+
+          {/* Image preview + extracting state */}
+          {isTwinExtracting && (
+            <div className="flex items-center gap-3 bg-blue-500/10 border border-blue-500/20 rounded-xl px-4 py-3">
+              {twinImageFile?.preview && (
+                <img src={twinImageFile.preview} alt="Medicine" className="w-10 h-10 rounded-lg object-cover border border-white/20 flex-none" />
+              )}
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" />
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '100ms'}} />
+                <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{animationDelay: '200ms'}} />
+                <span className="text-xs text-blue-300 ml-1">Reading drug name from image...</span>
+              </div>
+            </div>
+          )}
+
+          {/* Extracted from image badge */}
+          {twinExtractedFrom && !isTwinExtracting && (
+            <div className="flex items-center gap-2">
+              {twinImageFile?.preview && (
+                <img src={twinImageFile.preview} alt="Source" className="w-8 h-8 rounded-lg object-cover border border-teal-500/30 flex-none" />
+              )}
+              <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold text-teal-300 bg-teal-500/10 border border-teal-500/20 px-2.5 py-1 rounded-full">
+                <Camera size={10} /> Extracted from image ({twinExtractedFrom})
+              </span>
+              <button
+                type="button"
+                onClick={() => { setTwinImageFile(null); setTwinExtractedFrom(''); setTwinInput(''); }}
+                className="p-0.5 rounded-full text-gray-500 hover:text-white hover:bg-white/10 transition-colors"
+                title="Remove attachment"
+              >
+                <X size={12} />
+              </button>
+            </div>
+          )}
 
           {/* Validation / Error Message */}
           {twinError && (
