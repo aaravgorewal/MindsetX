@@ -15,7 +15,7 @@ from qdrant_client.models import Distance, VectorParams
 from cryptography.fernet import Fernet
 
 # Import vector store module
-from vector_store import get_qdrant_client, initialize_collections, upsert_vector, search_vectors, COLLECTION_CHAT_MEMORY, COLLECTION_PHQ9_VECTORS, COLLECTION_WELLNESS_CONTENT, COLLECTION_BIO_CONSENT_LOGS
+from vector_store import get_qdrant_client, get_qdrant_status, initialize_collections, upsert_vector, search_vectors, COLLECTION_CHAT_MEMORY, COLLECTION_PHQ9_VECTORS, COLLECTION_WELLNESS_CONTENT, COLLECTION_BIO_CONSENT_LOGS
 
 # Import embedding service
 from embedding_service import embed_text
@@ -345,11 +345,13 @@ async def global_exception_handler(request: Request, exc: Exception):
 # 4. Root Route (Health Check) - Returns Unified Response
 @app.get("/", tags=["System"], response_model=UnifiedResponse)
 def health_check():
-    """Health check endpoint"""
+    """Health check endpoint reporting live database status"""
+    qdrant_info = get_qdrant_status()
     return create_success_response(
         data={
             "engine": "Aura Bio-Psyche v1.0",
-            "database": "Qdrant Local Mode",
+            "database": qdrant_info.get("mode", "Unknown"),
+            "database_details": qdrant_info,
             "documentation": "/docs",
             "api_version": "1.0.0"
         },
@@ -362,14 +364,20 @@ async def chat(request: ChatRequest):
     """
     Chat endpoint.
     Stores message embeddings in Qdrant and runs the full MAS pipeline:
-      Archivist (store+retrieve) → Auditor (drift) → Strategist (response).
+      Archivist (retrieve past -> store current) → Auditor (drift) → Strategist (dynamic response).
     Returns a Unified Response enriched with drift_score, drift_state, and
     strategy actions alongside TextBlob sentiment.
     """
     try:
         session_id = request.session_id or str(uuid.uuid4())
-        # Use first word of message as a lightweight user_id when none is provided
+        # Use session_id as the memory user partition
         user_id = session_id
+
+        # ── Compute TextBlob sentiment early so MAS can factor it in ──────────
+        try:
+            sentiment = TextBlob(request.message).sentiment.polarity
+        except Exception:
+            sentiment = 0.0
 
         # ── Run MAS Pipeline ──────────────────────────────────────────────────
         mas = _get_mas()
@@ -377,6 +385,7 @@ async def chat(request: ChatRequest):
             user_id=user_id,
             message=request.message,
             session_id=session_id,
+            sentiment=sentiment,
         )
         # mas_result keys: reply, drift_score, drift_state, actions
 
@@ -399,20 +408,14 @@ async def chat(request: ChatRequest):
             logger.warning(f"vector_store upsert failed (non-fatal): {e}")
             user_message_id = None
 
-        # ── TextBlob sentiment (kept as additive signal) ──────────────────────
-        try:
-            sentiment = TextBlob(request.message).sentiment.polarity
-        except Exception:
-            sentiment = 0.0
-
-        # ── Map MAS drift state → UnifiedResponse DriftState enum ─────────────
+        # ── Map MAS drift state → UnifiedResponse DriftState enum (Single Source of Truth) ─
         drift_state_map = {
             "stable":        DriftState.STABLE,
             "early_warning": DriftState.DRIFTING,
             "high_risk":     DriftState.CRITICAL,
-            "no_history":    DriftState.STABLE,
+            "no_history":    DriftState.NO_DATA,
         }
-        unified_drift = drift_state_map.get(mas_result["drift_state"], DriftState.STABLE)
+        unified_drift = drift_state_map.get(mas_result["drift_state"], DriftState.NO_DATA)
 
         # ── Build sentinel actions for the Unified wrapper ────────────────────
         actions = []
@@ -430,20 +433,20 @@ async def chat(request: ChatRequest):
                 "Negative sentiment detected. Continue monitoring well-being."
             ).dict())
 
-        # ── Assemble data payload ─────────────────────────────────────────────
+        # ── Assemble data payload (drift_state matches unified_drift value) ────
         chat_data = {
             "message":     request.message,
             "reply":       mas_result["reply"],
             "sentiment":   round(sentiment, 4),
             "drift_score": mas_result["drift_score"],
-            "drift_state": mas_result["drift_state"],
+            "drift_state": unified_drift.value,
             "actions":     mas_result["actions"],
             "message_id":  user_message_id,
             "session_id":  session_id,
         }
 
         logger.info(
-            f"✅ /chat — drift={mas_result['drift_state']} "
+            f"✅ /chat — drift={unified_drift.value} "
             f"score={mas_result['drift_score']:.3f} "
             f"sentiment={sentiment:.3f}"
         )
@@ -977,6 +980,47 @@ async def get_similar_cases(student_id: str):
         return create_error_response(
             error=f"Search failed: {str(e)}",
             message="Failed to find similar cases"
+        )
+
+
+@app.get("/admin/collection/{collection_name}", tags=["Admin"], response_model=UnifiedResponse)
+async def inspect_collection(collection_name: str, limit: int = 10):
+    """
+    Inspect raw points and collection metadata in Qdrant.
+    """
+    try:
+        client = get_qdrant_client()
+        if not client.collection_exists(collection_name):
+            return create_error_response(
+                error=f"Collection '{collection_name}' not found",
+                message="Collection does not exist"
+            )
+        info = client.get_collection(collection_name)
+        points, _ = client.scroll(
+            collection_name=collection_name,
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+        return create_success_response(
+            data={
+                "collection_name": collection_name,
+                "points_count": info.points_count,
+                "vectors_count": getattr(info, "vectors_count", info.points_count),
+                "points": [
+                    {
+                        "id": str(p.id),
+                        "payload": p.payload
+                    }
+                    for p in points
+                ]
+            },
+            message=f"Fetched {len(points)} points from '{collection_name}'"
+        )
+    except Exception as e:
+        return create_error_response(
+            error=str(e),
+            message=f"Failed to inspect collection '{collection_name}'"
         )
 
 
