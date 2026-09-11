@@ -1,0 +1,127 @@
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#FFF8F0">
+    <title>MindSet X SafeBio Vault</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Hind:wght@300;400;500;600;700&family=Manrope:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['Manrope', 'sans-serif'],
+              hindi: ['Hind', 'sans-serif'],
+            },
+            colors: {
+              saffron: {
+                100: '#FFE0B2',
+                400: '#FFB366',
+                500: '#FF9933',
+                600: '#E68A2E',
+              },
+              teal: {
+                50: '#F0FDFA',
+                100: '#CCFBF1',
+                400: '#2DD4BF',
+                500: '#0A7E8C',
+                600: '#0D98A8',
+              },
+              indiaGreen: {
+                50: '#F0FDF4',
+                100: '#DCFCE7',
+                500: '#138808',
+                600: '#0F6D06',
+              },
+              navy: {
+                50: '#E8EAF6',
+                800: '#000080',
+                900: '#000050',
+              },
+              charcoal: '#1E1E2E',
+              warmWhite: '#FFF8F0',
+            },
+            animation: {
+              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+              'float': 'float 6s ease-in-out infinite',
+              'spin-slow': 'spin 8s linear infinite',
+            },
+            keyframes: {
+              float: {
+                '0%, 100%': { transform: 'translateY(0)' },
+                '50%': { transform: 'translateY(-10px)' },
+              }
+            },
+            boxShadow: {
+              '3d-dark': 'inset -2px -2px 5px rgba(255, 255, 255, 0.1), inset 2px 2px 5px rgba(0, 0, 0, 0.5), 5px 5px 15px rgba(0, 0, 0, 0.5)',
+              '3d-light': 'inset -2px -2px 5px rgba(255, 255, 255, 0.8), inset 2px 2px 5px rgba(0, 0, 0, 0.05), 10px 10px 20px rgba(0, 0, 0, 0.05)',
+              'plastic': 'inset 1px 1px 1px rgba(255, 255, 255, 0.4), 0 10px 20px -5px rgba(0, 0, 0, 0.1)',
+              'vibrant': '0 10px 25px -5px rgba(255, 153, 51, 0.3), 0 8px 10px -6px rgba(255, 153, 51, 0.2)',
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      :root {
+        --sat: env(safe-area-inset-top);
+        --sab: env(safe-area-inset-bottom);
+      }
+      body, html {
+        height: 100%;
+        width: 100%;
+        overflow: hidden; /* Lock scroll to app container */
+        overscroll-behavior: none;
+        -webkit-tap-highlight-color: transparent;
+        background-color: #FFF8F0;
+      }
+      #root {
+        height: 100%;
+        width: 100%;
+      }
+      /* Hide scrollbar for Chrome, Safari and Opera */
+      .no-scrollbar::-webkit-scrollbar {
+          display: none;
+      }
+      /* Hide scrollbar for IE, Edge and Firefox */
+      .no-scrollbar {
+          -ms-overflow-style: none;  /* IE and Edge */
+          scrollbar-width: none;  /* Firefox */
+      }
+      .glass-card {
+        background: rgba(255, 255, 255, 0.7);
+        backdrop-filter: blur(12px);
+        -webkit-backdrop-filter: blur(12px);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+      }
+      
+      /* 3D Icon Utilities */
+      .btn-3d {
+        position: relative;
+        transition: all 0.2s ease;
+      }
+      .btn-3d:active {
+        transform: scale(0.95);
+      }
+      .btn-3d::before {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        border-radius: inherit;
+        background: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, rgba(255,255,255,0) 50%);
+        pointer-events: none;
+      }
+    </style>
+  <script type="module" src="/index.tsx"></script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

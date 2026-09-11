@@ -1,0 +1,830 @@
+{
+  "info": {
+    "name": "MindSet X - Aura Clinical Backend",
+    "description": "Complete API testing collection for /chat, /phq9, /drift, and /memory/query endpoints with Qdrant verification",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1. Chat Endpoint",
+      "item": [
+        {
+          "name": "Chat - Basic Message",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has required fields\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData).to.have.property('reply');",
+                  "  pm.expect(responseData).to.have.property('sentiment');",
+                  "  pm.expect(responseData).to.have.property('message_id');",
+                  "});",
+                  "",
+                  "pm.test(\"Sentiment score is between -1 and 1\", function() {",
+                  "  const sentiment = pm.response.json().sentiment;",
+                  "  pm.expect(sentiment).to.be.at.least(-1);",
+                  "  pm.expect(sentiment).to.be.at.most(1);",
+                  "});",
+                  "",
+                  "// Save message_id for next request",
+                  "const responseData = pm.response.json();",
+                  "pm.environment.set(\"last_chat_message_id\", responseData.message_id);",
+                  "pm.environment.set(\"last_session_id\", pm.variables.get('session_id'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"I've been feeling overwhelmed with schoolwork and not sleeping well lately.\",\n  \"session_id\": \"{{$randomUUID}}\",\n  \"useSearch\": false,\n  \"useMaps\": false\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/chat",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "chat"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Chat - With Chat History",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response includes AI reply\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData.reply).to.be.a('string');",
+                  "  pm.expect(responseData.reply.length).to.be.greaterThan(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"What strategies would help me manage my stress better?\",\n  \"session_id\": \"{{last_session_id}}\",\n  \"chat_history\": [\n    {\n      \"role\": \"user\",\n      \"text\": \"I've been feeling overwhelmed with schoolwork and not sleeping well lately.\"\n    },\n    {\n      \"role\": \"model\",\n      \"text\": \"I understand you're experiencing stress from schoolwork and sleep difficulties. Let's explore some coping strategies.\"\n    }\n  ],\n  \"useSearch\": false,\n  \"useMaps\": false\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/chat",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "chat"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Chat - Negative Sentiment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Sentiment is captured for negative text\", function() {",
+                  "  const sentiment = pm.response.json().sentiment;",
+                  "  pm.expect(sentiment).to.be.lessThan(0);",
+                  "  console.log('Negative sentiment detected: ' + sentiment);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"message\": \"I feel terrible and everything seems hopeless right now. Nothing is working out.\",\n  \"session_id\": \"{{$randomUUID}}\",\n  \"useSearch\": false,\n  \"useMaps\": false\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/chat",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "chat"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. PHQ-9 Endpoint",
+      "item": [
+        {
+          "name": "PHQ-9 - Mild Depression",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has required fields\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData).to.have.property('totalScore');",
+                  "  pm.expect(responseData).to.have.property('severity');",
+                  "  pm.expect(responseData).to.have.property('driftState');",
+                  "  pm.expect(responseData).to.have.property('vector_id');",
+                  "});",
+                  "",
+                  "pm.test(\"Score is between 0-27\", function() {",
+                  "  const score = pm.response.json().totalScore;",
+                  "  pm.expect(score).to.be.at.least(0);",
+                  "  pm.expect(score).to.be.at.most(27);",
+                  "});",
+                  "",
+                  "pm.test(\"Severity is correctly classified\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  const validSeverities = ['minimal', 'mild', 'moderate', 'moderately_severe', 'severe'];",
+                  "  pm.expect(validSeverities).to.include(responseData.severity);",
+                  "});",
+                  "",
+                  "const responseData = pm.response.json();",
+                  "pm.environment.set(\"last_phq9_score\", responseData.totalScore);",
+                  "pm.environment.set(\"last_phq9_vector_id\", responseData.vector_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scores\": [1, 1, 0, 1, 2, 0, 1, 0, 1],\n  \"student_id\": \"STU{{$randomInt}}\",\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/phq9",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "phq9"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PHQ-9 - Moderate Depression",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Severity is moderate for middle-range scores\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData.severity).to.equal('moderate');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scores\": [2, 2, 1, 2, 2, 2, 2, 1, 1],\n  \"student_id\": \"STU{{$randomInt}}\",\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/phq9",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "phq9"
+              ]
+            }
+          }
+        },
+        {
+          "name": "PHQ-9 - Severe Depression",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Severity is severe for high scores\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData.severity).to.equal('severe');",
+                  "});",
+                  "",
+                  "pm.test(\"Alert level recommendation included\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData.recommendation).to.be.a('string');",
+                  "  pm.expect(responseData.recommendation.length).to.be.greaterThan(0);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scores\": [3, 3, 3, 3, 3, 3, 3, 2, 3],\n  \"student_id\": \"STU{{$randomInt}}\",\n  \"timestamp\": \"{{$isoTimestamp}}\"\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/phq9",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "phq9"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Drift Detection Endpoint",
+      "item": [
+        {
+          "name": "Drift - Overall Analysis",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has drift analysis fields\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData).to.have.property('overall_drift_score');",
+                  "  pm.expect(responseData).to.have.property('overall_status');",
+                  "  pm.expect(responseData).to.have.property('alert_level');",
+                  "  pm.expect(responseData).to.have.property('recommendations');",
+                  "});",
+                  "",
+                  "pm.test(\"Drift score is between 0 and 1\", function() {",
+                  "  const score = pm.response.json().overall_drift_score;",
+                  "  pm.expect(score).to.be.at.least(0);",
+                  "  pm.expect(score).to.be.at.most(1);",
+                  "});",
+                  "",
+                  "pm.test(\"Status is one of valid values\", function() {",
+                  "  const status = pm.response.json().overall_status;",
+                  "  const validStatuses = ['stable', 'drifting', 'critical_drift', 'error'];",
+                  "  pm.expect(validStatuses).to.include(status);",
+                  "});",
+                  "",
+                  "pm.test(\"Alert level is valid\", function() {",
+                  "  const alert = pm.response.json().alert_level;",
+                  "  const validLevels = ['green', 'yellow', 'red'];",
+                  "  pm.expect(validLevels).to.include(alert);",
+                  "});",
+                  "",
+                  "pm.test(\"Recommendations array exists\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData.recommendations).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"STU12345\",\n  \"include_chat\": true,\n  \"include_phq9\": true,\n  \"limit_history\": 10\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/drift",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "drift"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Drift - Chat Only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Chat drift analysis completed\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData.overall_status).to.not.equal('error');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"STU12345\",\n  \"include_chat\": true,\n  \"include_phq9\": false,\n  \"limit_history\": 10\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/drift",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "drift"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Drift - PHQ-9 Only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"PHQ-9 drift analysis completed\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData.overall_status).to.not.equal('error');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"STU12345\",\n  \"include_chat\": false,\n  \"include_phq9\": true,\n  \"limit_history\": 10\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/drift",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "drift"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Memory Query Endpoint",
+      "item": [
+        {
+          "name": "Memory Query - Hybrid Search",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Response has required fields\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData).to.have.property('status');",
+                  "  pm.expect(responseData).to.have.property('total_found');",
+                  "  pm.expect(responseData).to.have.property('results');",
+                  "  pm.expect(responseData).to.have.property('query_embedding_dim');",
+                  "});",
+                  "",
+                  "pm.test(\"Results array contains memory items\", function() {",
+                  "  const results = pm.response.json().results;",
+                  "  pm.expect(results).to.be.an('array');",
+                  "  if (results.length > 0) {",
+                  "    const item = results[0];",
+                  "    pm.expect(item).to.have.property('vector_id');",
+                  "    pm.expect(item).to.have.property('similarity_score');",
+                  "    pm.expect(item).to.have.property('content');",
+                  "    pm.expect(item.similarity_score).to.be.at.least(0);",
+                  "    pm.expect(item.similarity_score).to.be.at.most(1);",
+                  "  }",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"stress and anxiety management techniques\",\n  \"student_id\": \"STU12345\",\n  \"limit\": 5,\n  \"score_threshold\": 0.3,\n  \"time_window_days\": 90,\n  \"search_type\": \"hybrid\",\n  \"include_metadata\": true\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/memory/query",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "memory",
+                "query"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Memory Query - Chat Messages Only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Chat search returns relevant results\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData.status).to.equal('success');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"sleep problems and insomnia\",\n  \"student_id\": \"STU12345\",\n  \"limit\": 5,\n  \"score_threshold\": 0.3,\n  \"time_window_days\": 90,\n  \"search_type\": \"chat\",\n  \"include_metadata\": true\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/memory/query",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "memory",
+                "query"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Memory Query - Assessments Only",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Assessment search executes successfully\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  pm.expect(responseData.status).to.equal('success');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"depression assessment scores mental health\",\n  \"student_id\": \"STU12345\",\n  \"limit\": 5,\n  \"score_threshold\": 0.3,\n  \"time_window_days\": 90,\n  \"search_type\": \"assessment\",\n  \"include_metadata\": true\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/memory/query",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "memory",
+                "query"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Memory Query - Strict Threshold",
+          "event": [
+            {
+              "listen": "test",
+              "script": [
+                "pm.test(\"Status code is 200\", function() {",
+                "  pm.response.to.have.status(200);",
+                "});",
+                "",
+                "pm.test(\"Results respect similarity threshold\", function() {",
+                "  const results = pm.response.json().results;",
+                "  results.forEach(function(result) {",
+                "    pm.expect(result.similarity_score).to.be.at.least(0.7);",
+                "  });",
+                "});"
+              ]
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"suicidal thoughts and self-harm warning signs\",\n  \"limit\": 10,\n  \"score_threshold\": 0.7,\n  \"time_window_days\": 30,\n  \"search_type\": \"hybrid\",\n  \"include_metadata\": true\n}"
+            },
+            "url": {
+              "raw": "http://localhost:8000/memory/query",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "8000",
+              "path": [
+                "memory",
+                "query"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Qdrant Verification",
+      "item": [
+        {
+          "name": "Verify Chat Memory Collection",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"Chat memory collection has data\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  console.log('Collection info: ' + JSON.stringify(responseData, null, 2));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:6333/collections/chat_memory",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "6333",
+              "path": [
+                "collections",
+                "chat_memory"
+              ]
+            }
+          }
+        },
+        {
+          "name": "Verify PHQ-9 Collection",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function() {",
+                  "  pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test(\"PHQ-9 collection has data\", function() {",
+                  "  const responseData = pm.response.json();",
+                  "  console.log('PHQ-9 Collection info: ' + JSON.stringify(responseData, null, 2));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:6333/collections/phq9_vectors",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "6333",
+              "path": [
+                "collections",
+                "phq9_vectors"
+              ]
+            }
+          }
+        },
+        {
+          "name": "List All Collections",
+          "event": [
+            {
+              "listen": "test",
+              "script": [
+                "pm.test(\"Status code is 200\", function() {",
+                "  pm.response.to.have.status(200);",
+                "});",
+                "",
+                "pm.test(\"Collections endpoint returns data\", function() {",
+                "  const responseData = pm.response.json();",
+                "  console.log('All collections: ' + JSON.stringify(responseData, null, 2));",
+                "  pm.expect(responseData.collections).to.be.an('array');",
+                "});"
+              ]
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "http://localhost:6333/collections",
+              "protocol": "http",
+              "host": [
+                "localhost"
+              ],
+              "port": "6333",
+              "path": [
+                "collections"
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "default"
+    },
+    {
+      "key": "session_id",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "last_chat_message_id",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "last_session_id",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "last_phq9_score",
+      "value": "",
+      "type": "default"
+    },
+    {
+      "key": "last_phq9_vector_id",
+      "value": "",
+      "type": "default"
+    }
+  ]
+}

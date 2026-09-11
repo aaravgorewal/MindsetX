@@ -1,0 +1,9 @@
+{
+  "name": "MindSet X SafeBio Vault",
+  "description": "A comprehensive mental health and secure bio-data application designed for Indian students. Features anonymous AI support, secure health vaults, and culturally relevant wellness tools.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}

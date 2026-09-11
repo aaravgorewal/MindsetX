@@ -1,0 +1,82 @@
+# Node / Frontend
+node_modules/
+dist/
+.next/
+.nuxt/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.eggs/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment files (never commit secrets)
+.env
+.env.local
+.env.*.local
+
+# Qdrant local data (use Qdrant Cloud instead)
+qdrant_data/
+qdrant_storage/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build artifacts
+build/
+*.log
+install_log.txt
+
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Qdrant / local data
+qdrant_data/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+
+# Logs
+*.log
+
+# Testing
+.coverage
+htmlcov/
+
+# Temporary
+*.tmp
+*.temp

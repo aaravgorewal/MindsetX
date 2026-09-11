@@ -1,0 +1,33 @@
+# MindSet-X MAS Backend Requirements
+# Merged from backend/ and backend copy/ — keeping highest compatible versions
+# Note: pinned to Python 3.9 compatible releases
+
+# Web Framework
+fastapi==0.115.11
+uvicorn==0.34.0
+starlette==0.45.3
+pydantic==2.10.6
+pydantic-core==2.27.2
+
+# Vector Database
+qdrant-client==1.16.1
+
+# Embeddings
+sentence-transformers>=2.2.0
+torch>=2.0.0
+transformers>=4.30.0
+huggingface-hub>=0.16.0
+numpy>=1.24.0
+scikit-learn>=1.3.0
+
+# NLP & Security
+textblob
+cryptography
+
+# Utilities
+python-dotenv==1.2.1
+python-multipart==0.0.20
+
+# Async support
+aiofiles>=23.0.0
+httpx>=0.28.1
