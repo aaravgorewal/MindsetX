@@ -11,7 +11,9 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Footer from './components/Footer';
 import Login from './components/Login';
+import Landing from './components/Landing';
 import Dashboard from './components/Dashboard';
+import ErrorBoundary from './components/ErrorBoundary';
 import { Screen } from './types';
 import { useAuth } from './context/AuthContext';
 import { Lock, ScanFace, Fingerprint, ChevronRight } from 'lucide-react';
@@ -22,6 +24,7 @@ const App: React.FC = () => {
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isAppLocked, setIsAppLocked] = useState(true);
   const [pendingConsentCount, setPendingConsentCount] = useState<number>(1);
+  const [hasStartedOnboarding, setHasStartedOnboarding] = useState(false);
   
   // App Lock State
   const [authMethod, setAuthMethod] = useState<'FACE'|'BIO'|'PIN'>('FACE');
@@ -99,9 +102,12 @@ const App: React.FC = () => {
       );
   }
 
-  // --- 2. UNAUTHENTICATED STATE: GOOGLE LOGIN ---
+  // --- 2. UNAUTHENTICATED STATE: LANDING & GOOGLE LOGIN ---
   if (!user) {
-      return <Login />;
+      if (!hasStartedOnboarding) {
+          return <Landing onGetStarted={() => setHasStartedOnboarding(true)} />;
+      }
+      return <Login onBack={() => setHasStartedOnboarding(false)} />;
   }
 
   // --- 3. SECONDARY APP LOCK SCREEN (PIN/BIO/FACE) ---
@@ -215,7 +221,9 @@ const App: React.FC = () => {
 
            {/* Content Wrapper */}
            <div className="relative z-10 p-4 md:p-8 max-w-7xl mx-auto w-full">
-              {renderScreen()}
+              <ErrorBoundary fallbackTitle="Screen Error" onReset={() => setCurrentScreen(Screen.HOME)}>
+                {renderScreen()}
+              </ErrorBoundary>
            </div>
 
            {/* Dashboard Footer (Hidden on Live Screen) */}

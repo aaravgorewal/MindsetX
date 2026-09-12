@@ -17,6 +17,12 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
+    if (typeof window !== 'undefined' && localStorage.getItem('test_mock_user')) {
+      setUser({ uid: 'test-demo-user', email: 'test@mindsetx.in', displayName: 'Test Student' } as any);
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = subscribeToAuthChanges(async (currentUser) => {
       setUser(currentUser);
       if (currentUser) {

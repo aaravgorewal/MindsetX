@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Shield, Sparkles, AlertCircle } from 'lucide-react';
+import { Shield, Sparkles, AlertCircle, ChevronLeft } from 'lucide-react';
 
-const Login: React.FC = () => {
+interface LoginProps {
+  onBack?: () => void;
+}
+
+const Login: React.FC<LoginProps> = ({ onBack }) => {
   const { signIn } = useAuth();
   const [error, setError] = useState<string>('');
   const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
@@ -27,7 +31,18 @@ const Login: React.FC = () => {
   };
 
   return (
-    <div className="fixed inset-0 z-[100] bg-charcoal flex flex-col items-center justify-center p-6 text-white overflow-hidden select-none">
+    <div className="fixed inset-0 z-[100] bg-charcoal flex flex-col items-center justify-center p-6 text-white overflow-hidden select-none animate-fade-in">
+      {/* Back button to landing */}
+      {onBack && (
+        <button
+          onClick={onBack}
+          className="absolute top-6 left-6 z-20 flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-gray-300 hover:text-white transition-all cursor-pointer backdrop-blur-md active:scale-95 shadow-sm"
+        >
+          <ChevronLeft size={16} />
+          <span>Back to Overview</span>
+        </button>
+      )}
+
       {/* Ambient background glow matching MindSet theme */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
         <div className="absolute -top-[15%] -left-[10%] w-[50%] h-[50%] bg-saffron-500/15 rounded-full blur-[120px]"></div>

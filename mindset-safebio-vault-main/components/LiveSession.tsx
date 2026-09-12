@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Mic, MicOff, PhoneOff, Video, Star, ChevronLeft, CheckCircle, Brain, X, Calendar as CalendarIcon, ExternalLink, RefreshCw, User, Briefcase, QrCode, ShieldCheck } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, Video, Star, ChevronLeft, CheckCircle, Brain, X, Calendar as CalendarIcon, ExternalLink, RefreshCw, User, Briefcase, QrCode, ShieldCheck, MapPin, GraduationCap, Building2, Clock, Award, Languages } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { GoogleGenAI, LiveServerMessage } from '@google/genai';
 import { useAuth } from '../context/AuthContext';
@@ -20,6 +20,12 @@ interface Specialist {
   rating: number;
   avatar: string;
   languages: string[];
+  experienceYears: number | string;
+  qualification: string;
+  workplace: string;
+  bio: string;
+  sessionsCompleted: number;
+  location: string;
 }
 
 interface CalendarEvent {
@@ -42,7 +48,13 @@ const SPECIALISTS: Specialist[] = [
     price: 0,
     rating: 5.0,
     avatar: 'ai',
-    languages: ['English', 'Hindi', 'Hinglish']
+    languages: ['English', 'Hindi', 'Hinglish'],
+    experienceYears: 'Always Available',
+    qualification: 'Adaptive Multimodal Neural Engine',
+    workplace: 'MindSet Core On-Device & Cloud',
+    bio: 'Trained on clinical triage frameworks (PHQ-9, GAD-7) and empathetic active listening models. I provide instant, judgment-free conversational support, de-escalation, and guided somatic exercises whenever you need someone to talk to.',
+    sessionsCompleted: 12500,
+    location: 'Cloud & On-Device (Pan-India)'
   },
   {
     id: '1',
@@ -53,7 +65,13 @@ const SPECIALISTS: Specialist[] = [
     price: 1500,
     rating: 4.9,
     avatar: 'https://i.pravatar.cc/150?u=1',
-    languages: ['English', 'Hindi']
+    languages: ['English', 'Hindi'],
+    experienceYears: 12,
+    qualification: 'MD Psychiatry (AIIMS New Delhi), DNB',
+    workplace: 'Senior Consultant, Max Super Speciality Hospital',
+    bio: 'I specialize in mood disorders, acute panic, and clinical depression in university students and young professionals. My practice balances evidence-based pharmacological management with supportive psychotherapy to restore emotional equilibrium.',
+    sessionsCompleted: 920,
+    location: 'Delhi NCR'
   },
   {
     id: '2',
@@ -64,7 +82,13 @@ const SPECIALISTS: Specialist[] = [
     price: 200,
     rating: 4.7,
     avatar: 'https://i.pravatar.cc/150?u=8',
-    languages: ['Hindi', 'Marathi']
+    languages: ['Hindi', 'Marathi'],
+    experienceYears: '3rd Year B.Tech, Trained Peer Counselor',
+    qualification: 'IIT Bombay Peer Support Certification',
+    workplace: 'IIT Bombay Student Mentorship Cell',
+    bio: 'Having survived intense semester backlogs, placement pressure, and hostel burnout myself, I help fellow students talk through academic isolation without feeling judged. Sometimes you just need someone who gets what an all-nighter before finals feels like.',
+    sessionsCompleted: 68,
+    location: 'Mumbai'
   },
   {
     id: '3',
@@ -75,7 +99,13 @@ const SPECIALISTS: Specialist[] = [
     price: 800,
     rating: 4.8,
     avatar: 'https://i.pravatar.cc/150?u=3',
-    languages: ['English', 'Punjabi']
+    languages: ['English', 'Punjabi'],
+    experienceYears: 7,
+    qualification: 'PCC - International Coaching Federation (ICF)',
+    workplace: 'Founder, Momentum Mind Coaching',
+    bio: 'I work with ambitious students and early-career founders who feel stuck in chronic overthinking. We break down daunting career milestones into actionable micro-habits, working on executive function, self-efficacy, and purposeful momentum.',
+    sessionsCompleted: 410,
+    location: 'Chandigarh'
   },
   {
     id: '4',
@@ -86,7 +116,115 @@ const SPECIALISTS: Specialist[] = [
     price: 600,
     rating: 4.6,
     avatar: 'https://i.pravatar.cc/150?u=2',
-    languages: ['Hindi', 'Sanskrit']
+    languages: ['Hindi', 'Sanskrit'],
+    experienceYears: 15,
+    qualification: 'BAMS (National Institute of Ayurveda, Jaipur)',
+    workplace: 'Consultant, Charaka Ayurvedic Clinic & Wellness Retreat',
+    bio: 'Rooted in classical Charaka Samhita wisdom, I assess chronic stress, insomnia, and psychosomatic tension through tridosha and circadian alignment. We integrate personalized dinacharya (daily routine), herbal adaptogens, and pranayama.',
+    sessionsCompleted: 640,
+    location: 'Rishikesh'
+  },
+  {
+    id: '5',
+    name: 'Dr. Arjun Rao',
+    role: 'Psychiatrist',
+    specialty: 'Sleep Disorders & ADHD Management',
+    isOnline: false,
+    price: 1400,
+    rating: 4.8,
+    avatar: 'https://i.pravatar.cc/150?u=12',
+    languages: ['English', 'Hindi', 'Telugu'],
+    experienceYears: 8,
+    qualification: 'MBBS, MD Psychiatry (Osmania Medical College)',
+    workplace: 'Attending Psychiatrist, Care Hospitals',
+    bio: 'My clinical focus is on adult ADHD, executive dysfunction, and delayed sleep phase syndrome in tech-heavy student routines. I believe in comprehensive diagnostic rigor coupled with practical sleep-hygiene scaffolding.',
+    sessionsCompleted: 430,
+    location: 'Hyderabad'
+  },
+  {
+    id: '6',
+    name: 'Dr. Meera Iyer',
+    role: 'Psychiatrist',
+    specialty: 'Trauma, Grief & Clinical PTSD',
+    isOnline: true,
+    price: 2200,
+    rating: 4.9,
+    avatar: 'https://i.pravatar.cc/150?u=15',
+    languages: ['English', 'Hindi', 'Tamil'],
+    experienceYears: 18,
+    qualification: 'MD Psychiatry (Madras Medical College), FRCPsych (UK)',
+    workplace: 'Senior Consultant, Apollo Hospitals, Greams Road',
+    bio: 'With nearly two decades of clinical experience, I work closely with individuals navigating profound grief, developmental trauma, and complex PTSD. I provide a calm, deeply safe therapeutic space where healing can unfold at your own pace.',
+    sessionsCompleted: 1450,
+    location: 'Chennai'
+  },
+  {
+    id: '7',
+    name: 'Kabir Chatterjee',
+    role: 'Therapist',
+    specialty: 'Exam Stress, Burnout & Performance Anxiety',
+    isOnline: true,
+    price: 850,
+    rating: 4.9,
+    avatar: 'https://i.pravatar.cc/150?u=19',
+    languages: ['English', 'Hindi', 'Bengali'],
+    experienceYears: 6,
+    qualification: 'M.Phil Clinical Psychology (Calcutta University), RCI Licensed',
+    workplace: 'Consultant Psychologist, Peerless Hospital & Private Practice',
+    bio: 'I integrate Cognitive Behavioral Therapy (CBT) and Acceptance & Commitment Therapy (ACT) to help competitive exam aspirants dismantle perfectionism and crippling test anxiety. We target self-worth independent of test scores.',
+    sessionsCompleted: 340,
+    location: 'Kolkata'
+  },
+  {
+    id: '8',
+    name: 'Tanvi Patel',
+    role: 'Saarthi',
+    specialty: 'Hostel Adjustment & 1st Year Loneliness',
+    isOnline: true,
+    price: 150,
+    rating: 4.7,
+    avatar: 'https://i.pravatar.cc/150?u=24',
+    languages: ['Hindi', 'Gujarati', 'English'],
+    experienceYears: '2nd Year M.Sc Psychology, Trained Peer Mentor',
+    qualification: 'Gujarat University Youth Counselor Training',
+    workplace: 'Campus Student Wellness Collective',
+    bio: 'Moving away from home for college can trigger unexpected homesickness, social awkwardness, and self-doubt. As a Saarthi peer guide, I listen with an open heart and share grounding techniques that made college feel like home for me.',
+    sessionsCompleted: 42,
+    location: 'Ahmedabad'
+  },
+  {
+    id: '9',
+    name: 'Aditya Kulkarni',
+    role: 'Life Coach',
+    specialty: 'Habit Systems & Procrastination Overcome',
+    isOnline: false,
+    price: 650,
+    rating: 4.6,
+    avatar: 'https://i.pravatar.cc/150?u=31',
+    languages: ['English', 'Hindi', 'Marathi'],
+    experienceYears: 5,
+    qualification: 'Certified Behavior Analyst & Life Coach (ICF ACC)',
+    workplace: 'Private Practice, Deccan Gymkhana',
+    bio: 'Procrastination is rarely laziness—it is usually emotional regulation failure. I guide university students and engineers in architecting friction-free study environments, dopamine detoxes, and structured accountability rituals.',
+    sessionsCompleted: 275,
+    location: 'Pune'
+  },
+  {
+    id: '10',
+    name: 'Priya Nair',
+    role: 'Therapist',
+    specialty: 'Relationship, Family & Boundary Therapy',
+    isOnline: false,
+    price: 1100,
+    rating: 4.8,
+    avatar: 'https://i.pravatar.cc/150?u=35',
+    languages: ['English', 'Hindi', 'Malayalam'],
+    experienceYears: 9,
+    qualification: 'M.Sc, M.Phil Clinical Psychology (NIMHANS Bangalore)',
+    workplace: 'Aster Medcity & Private Practice',
+    bio: 'I help young adults navigate complex interpersonal relationships, parental expectations, and personal boundaries. My relational approach focuses on emotional attunement, compassionate communication, and self-advocacy.',
+    sessionsCompleted: 580,
+    location: 'Kochi'
   }
 ];
 
@@ -263,16 +401,39 @@ export default function LiveSession({ onEnd }: LiveSessionProps) {
   const { user } = useAuth();
   const [view, setView] = useState<'DIRECTORY' | 'AI_SESSION' | 'SCHEDULE'>('DIRECTORY');
   const [selectedSpecialist, setSelectedSpecialist] = useState<Specialist | null>(null);
+  const [profileSpecialist, setProfileSpecialist] = useState<Specialist | null>(null);
   const [bookingStep, setBookingStep] = useState<'NONE' | 'DATE' | 'PAYMENT' | 'CONFIRM'>('NONE');
   const [selectedTimeSlot, setSelectedTimeSlot] = useState<string>('');
   const [selectedBookingDate, setSelectedBookingDate] = useState<Date>(new Date());
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
+
+  // Close profile or booking modal via Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (profileSpecialist) {
+          setProfileSpecialist(null);
+        } else if (bookingStep !== 'NONE') {
+          setSelectedSpecialist(null);
+          setBookingStep('NONE');
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [profileSpecialist, bookingStep]);
   
   // Google Calendar State
   const [isCalendarConnected, setIsCalendarConnected] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [scheduleMode, setScheduleMode] = useState<'USER' | 'CREATOR'>('USER');
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
+  const [selectedRole, setSelectedRole] = useState<string>('All');
+
+  const filteredSpecialists = useMemo(() => {
+    if (selectedRole === 'All') return SPECIALISTS;
+    return SPECIALISTS.filter(s => s.role === selectedRole);
+  }, [selectedRole]);
 
   // --- Date picker helpers ---
   const bookingDates = useMemo(() => {
@@ -462,70 +623,93 @@ export default function LiveSession({ onEnd }: LiveSessionProps) {
            <div className="flex-1 overflow-y-auto px-4 space-y-3 pb-24 pt-4">
                {/* Filters */}
                <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar">
-                   {['All', 'Psychiatrist', 'Saarthi', 'Life Coach'].map(f => (
-                       <button key={f} className="px-4 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-gray-300 whitespace-nowrap shadow-sm hover:bg-white/10">
+                   {['All', 'Psychiatrist', 'Therapist', 'Saarthi', 'Life Coach'].map(f => (
+                       <button 
+                           key={f}
+                           onClick={() => setSelectedRole(f)}
+                           className={`px-4 py-1.5 rounded-full border text-xs font-bold whitespace-nowrap shadow-sm transition-all cursor-pointer ${
+                               selectedRole === f 
+                                   ? 'bg-saffron-500 text-white border-saffron-500 shadow-md' 
+                                   : 'bg-white/5 border-white/10 text-gray-300 hover:bg-white/10'
+                           }`}
+                       >
                            {f}
                        </button>
                    ))}
                </div>
 
-               {SPECIALISTS.map((s) => (
-                   <div key={s.id} className="bg-white/5 rounded-2xl p-4 shadow-sm border border-white/10 flex items-center gap-4 relative overflow-hidden transition-shadow hover:bg-white/10">
-                       {/* Avatar */}
-                       <div className="relative shrink-0">
-                           {s.role === 'AI Companion' ? (
-                               <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg">
-                                   <Brain size={28} />
-                               </div>
-                           ) : (
-                               <img src={s.avatar} alt={s.name} className="w-16 h-16 rounded-full object-cover border-2 border-white/20 shadow-md" />
-                           )}
-                           
-                           {/* ONLINE/OFFLINE INDICATOR */}
-                           <div className={`absolute bottom-1 right-1 w-3.5 h-3.5 rounded-full border-2 border-charcoal ${s.isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`}></div>
-                       </div>
+                {filteredSpecialists.map((s) => (
+                    <div 
+                        key={s.id} 
+                        onClick={() => setProfileSpecialist(s)}
+                        className="bg-white/5 rounded-2xl p-4 shadow-sm border border-white/10 flex items-center gap-4 relative overflow-hidden transition-all hover:bg-white/10 hover:border-white/20 cursor-pointer group"
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                                e.preventDefault();
+                                setProfileSpecialist(s);
+                            }
+                        }}
+                    >
+                        {/* Avatar */}
+                        <div className="relative shrink-0">
+                            {s.role === 'AI Companion' ? (
+                                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg">
+                                    <Brain size={28} />
+                                </div>
+                            ) : (
+                                <img src={s.avatar} alt={s.name} className="w-16 h-16 rounded-full object-cover border-2 border-white/20 shadow-md" />
+                            )}
+                            
+                            {/* ONLINE/OFFLINE INDICATOR */}
+                            <div className={`absolute bottom-1 right-1 w-3.5 h-3.5 rounded-full border-2 border-charcoal ${s.isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`}></div>
+                        </div>
 
-                       {/* Info */}
-                       <div className="flex-1">
-                           <div className="flex justify-between items-start">
-                               <div>
-                                   <h3 className="font-bold text-white flex items-center gap-1 text-sm">
-                                       {s.name}
-                                       {s.role !== 'AI Companion' && <CheckCircle size={14} className="text-blue-400" />}
-                                   </h3>
-                                   <p className="text-xs text-saffron-500 font-bold">{s.role}</p>
-                               </div>
-                               <div className="flex items-center gap-1 bg-yellow-500/10 px-1.5 py-0.5 rounded text-yellow-500 text-[10px] font-bold">
-                                   <Star size={10} fill="currentColor" /> {s.rating}
-                               </div>
-                           </div>
-                           <p className="text-xs text-gray-400 mt-1 line-clamp-1">{s.specialty}</p>
-                           <div className="flex gap-2 mt-1">
-                               {s.languages.map(l => (
-                                   <span key={l} className="text-[10px] text-gray-500 bg-white/5 px-1 rounded">{l}</span>
-                               ))}
-                           </div>
-                       </div>
+                        {/* Info */}
+                        <div className="flex-1 min-w-0">
+                            <div className="flex justify-between items-start gap-2">
+                                <div>
+                                    <h3 className="font-bold text-white flex items-center gap-1 text-sm group-hover:text-saffron-400 transition-colors">
+                                        {s.name}
+                                        {s.role !== 'AI Companion' && <CheckCircle size={14} className="text-blue-400 shrink-0" />}
+                                    </h3>
+                                    <p className="text-xs text-saffron-500 font-bold">{s.role}</p>
+                                </div>
+                                <div className="flex items-center gap-1 bg-yellow-500/10 px-1.5 py-0.5 rounded text-yellow-500 text-[10px] font-bold shrink-0">
+                                    <Star size={10} fill="currentColor" /> {s.rating}
+                                </div>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1 line-clamp-1">{s.specialty}</p>
+                            <div className="flex gap-2 mt-1 flex-wrap">
+                                {s.languages.map(l => (
+                                    <span key={l} className="text-[10px] text-gray-400 bg-white/5 px-1.5 py-0.5 rounded border border-white/5">{l}</span>
+                                ))}
+                            </div>
+                        </div>
 
-                       {/* Action */}
-                       <div className="flex flex-col items-end gap-2 shrink-0">
-                           <div className="text-sm font-bold text-white">
-                               {s.price === 0 ? 'Free' : `₹${s.price}`}
-                               {s.price > 0 && <span className="text-[10px] text-gray-500 font-normal">/session</span>}
-                           </div>
-                           <button 
-                               onClick={() => handleSpecialistClick(s)}
-                               className={`px-4 py-2 rounded-lg text-xs font-bold shadow-md transition-transform active:scale-95 ${
-                                   s.isOnline || s.role === 'AI Companion'
-                                   ? 'bg-navy-800 text-white hover:bg-navy-700' 
-                                   : 'bg-white/5 border border-white/10 text-gray-400'
-                               }`}
-                           >
-                               {s.role === 'AI Companion' ? 'Start Live' : s.isOnline ? 'Join Now' : 'Book Slot'}
-                           </button>
-                       </div>
-                   </div>
-               ))}
+                        {/* Action */}
+                        <div className="flex flex-col items-end gap-2 shrink-0">
+                            <div className="text-sm font-bold text-white">
+                                {s.price === 0 ? 'Free' : `₹${s.price}`}
+                                {s.price > 0 && <span className="text-[10px] text-gray-500 font-normal">/session</span>}
+                            </div>
+                            <button 
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSpecialistClick(s);
+                                }}
+                                className={`px-4 py-2 rounded-lg text-xs font-bold shadow-md transition-transform active:scale-95 ${
+                                    s.isOnline || s.role === 'AI Companion'
+                                    ? 'bg-navy-800 text-white hover:bg-navy-700' 
+                                    : 'bg-white/5 border border-white/10 text-gray-400 hover:text-white'
+                                }`}
+                            >
+                                {s.role === 'AI Companion' ? 'Start Live' : s.isOnline ? 'Join Now' : 'Book Slot'}
+                            </button>
+                        </div>
+                    </div>
+                ))}
                <div className="h-12"></div>
            </div>
        )}
@@ -602,6 +786,184 @@ export default function LiveSession({ onEnd }: LiveSessionProps) {
                )}
            </div>
        )}
+
+        {/* Profile Detail Modal */}
+        {profileSpecialist && (
+            <div 
+                className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-4 animate-fade-in"
+                onClick={() => setProfileSpecialist(null)}
+            >
+                <div 
+                    className="bg-charcoal border border-white/10 w-full max-w-lg rounded-3xl p-6 shadow-2xl animate-slide-in-up text-white max-h-[90vh] overflow-y-auto no-scrollbar relative"
+                    onClick={e => e.stopPropagation()}
+                >
+                    {/* Top Bar with Close Button */}
+                    <div className="flex justify-between items-center pb-4 border-b border-white/10 mb-5">
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs uppercase font-bold tracking-wider text-gray-400">Specialist Profile</span>
+                            <span className="w-1.5 h-1.5 rounded-full bg-saffron-500"></span>
+                            <span className="text-xs text-saffron-400 font-semibold">{profileSpecialist.role}</span>
+                        </div>
+                        <button 
+                            onClick={() => setProfileSpecialist(null)}
+                            className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
+                            aria-label="Close modal"
+                        >
+                            <X size={18} />
+                        </button>
+                    </div>
+
+                    {/* Profile Hero Header */}
+                    <div className="flex items-start gap-4 mb-5">
+                        <div className="relative shrink-0">
+                            {profileSpecialist.role === 'AI Companion' ? (
+                                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white shadow-lg border border-indigo-400/30">
+                                    <Brain size={36} />
+                                </div>
+                            ) : (
+                                <img 
+                                    src={profileSpecialist.avatar} 
+                                    alt={profileSpecialist.name} 
+                                    className="w-20 h-20 rounded-2xl object-cover border-2 border-white/20 shadow-md" 
+                                />
+                            )}
+                            <div className={`absolute -bottom-1 -right-1 w-4 h-4 rounded-full border-2 border-charcoal ${profileSpecialist.isOnline ? 'bg-green-500 animate-pulse' : 'bg-gray-500'}`} />
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2 mb-1">
+                                <h2 className="text-xl font-bold text-white tracking-tight">{profileSpecialist.name}</h2>
+                                {profileSpecialist.role !== 'AI Companion' && (
+                                    <CheckCircle size={18} className="text-blue-400 shrink-0" title="Verified Specialist" />
+                                )}
+                            </div>
+                            <p className="text-xs font-semibold text-saffron-400 mb-2">{profileSpecialist.specialty}</p>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <div className="flex items-center gap-1 bg-yellow-500/15 border border-yellow-500/30 px-2 py-0.5 rounded-md text-yellow-400 text-xs font-bold">
+                                    <Star size={12} fill="currentColor" /> {profileSpecialist.rating}
+                                </div>
+                                <div className="text-xs text-gray-400 bg-white/5 border border-white/10 px-2 py-0.5 rounded-md flex items-center gap-1">
+                                    <MapPin size={11} className="text-gray-400" />
+                                    {profileSpecialist.location}
+                                </div>
+                                <div className={`text-xs px-2 py-0.5 rounded-md font-medium ${profileSpecialist.isOnline ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-gray-500/10 text-gray-400 border border-white/10'}`}>
+                                    {profileSpecialist.isOnline ? 'Online Now' : 'Accepting Bookings'}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Metric Highlights */}
+                    <div className="grid grid-cols-3 gap-2 p-3 bg-white/[0.03] border border-white/10 rounded-2xl mb-5 text-center">
+                        <div className="p-2">
+                            <div className="flex items-center justify-center text-saffron-400 mb-1">
+                                <Award size={16} />
+                            </div>
+                            <div className="text-[11px] text-gray-400">Experience</div>
+                            <div className="text-xs font-bold text-white mt-0.5">
+                                {typeof profileSpecialist.experienceYears === 'number' 
+                                    ? `${profileSpecialist.experienceYears} Years` 
+                                    : profileSpecialist.experienceYears}
+                            </div>
+                        </div>
+                        <div className="p-2 border-x border-white/10">
+                            <div className="flex items-center justify-center text-blue-400 mb-1">
+                                <Clock size={16} />
+                            </div>
+                            <div className="text-[11px] text-gray-400">Sessions</div>
+                            <div className="text-xs font-bold text-white mt-0.5">
+                                {profileSpecialist.sessionsCompleted.toLocaleString()}+
+                            </div>
+                        </div>
+                        <div className="p-2">
+                            <div className="flex items-center justify-center text-green-400 mb-1">
+                                <span className="font-bold text-sm">₹</span>
+                            </div>
+                            <div className="text-[11px] text-gray-400">Fee</div>
+                            <div className="text-xs font-bold text-white mt-0.5">
+                                {profileSpecialist.price === 0 ? 'Free' : `₹${profileSpecialist.price}/session`}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Professional Background Details */}
+                    <div className="space-y-3 mb-5">
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 flex items-start gap-3">
+                            <GraduationCap size={18} className="text-saffron-400 shrink-0 mt-0.5" />
+                            <div>
+                                <div className="text-[11px] uppercase font-bold text-gray-400 tracking-wider">Qualification</div>
+                                <div className="text-sm font-semibold text-white mt-0.5">{profileSpecialist.qualification}</div>
+                            </div>
+                        </div>
+
+                        <div className="bg-white/5 border border-white/10 rounded-xl p-3.5 flex items-start gap-3">
+                            <Building2 size={18} className="text-blue-400 shrink-0 mt-0.5" />
+                            <div>
+                                <div className="text-[11px] uppercase font-bold text-gray-400 tracking-wider">Practice / Affiliation</div>
+                                <div className="text-sm font-semibold text-white mt-0.5">{profileSpecialist.workplace}</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Bio / Approach */}
+                    <div className="mb-5">
+                        <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">About & Approach</h3>
+                        <p className="text-sm text-gray-300 leading-relaxed bg-white/[0.02] border border-white/5 rounded-xl p-4">
+                            {profileSpecialist.bio}
+                        </p>
+                    </div>
+
+                    {/* Languages */}
+                    <div className="mb-6">
+                        <div className="flex items-center gap-1.5 text-xs font-bold text-gray-400 uppercase tracking-wider mb-2">
+                            <Languages size={14} className="text-saffron-400" />
+                            <span>Languages Spoken</span>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                            {profileSpecialist.languages.map(l => (
+                                <span key={l} className="text-xs font-medium text-gray-200 bg-white/10 border border-white/15 px-3 py-1 rounded-lg">
+                                    {l}
+                                </span>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Direct Booking CTA from inside modal */}
+                    <div className="pt-2 border-t border-white/10">
+                        <button
+                            onClick={() => {
+                                const s = profileSpecialist;
+                                setProfileSpecialist(null);
+                                handleSpecialistClick(s);
+                            }}
+                            className={`w-full py-3.5 rounded-xl font-bold text-sm shadow-lg transition-transform active:scale-[0.99] flex items-center justify-center gap-2 ${
+                                profileSpecialist.isOnline || profileSpecialist.role === 'AI Companion'
+                                    ? 'bg-navy-800 hover:bg-navy-700 text-white' 
+                                    : 'bg-saffron-500 hover:bg-saffron-600 text-white'
+                            }`}
+                        >
+                            {profileSpecialist.role === 'AI Companion' ? (
+                                <>
+                                    <Brain size={18} />
+                                    Start Live AI Session (Free)
+                                </>
+                            ) : profileSpecialist.isOnline ? (
+                                <>
+                                    <Video size={18} />
+                                    Join Now • {profileSpecialist.price === 0 ? 'Free' : `₹${profileSpecialist.price}`}
+                                </>
+                            ) : (
+                                <>
+                                    <CalendarIcon size={18} />
+                                    Book Slot • ₹{profileSpecialist.price}
+                                </>
+                            )}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        )}
 
        {/* Booking Modal */}
        {selectedSpecialist && bookingStep !== 'NONE' && (
