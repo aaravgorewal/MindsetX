@@ -1,0 +1,8 @@
+This is a medical lab report document in plain text format.
+Patient ID: 92-8821-9921
+Lab: Max Healthcare Labs
+Test: Complete Blood Count (CBC)
+Hemoglobin: 14.2 g/dL
+WBC: 6,800 /mcL
+Platelets: 245,000 /mcL
+Conclusion: Normal hematological panel.

@@ -1,0 +1,20 @@
+##fileformat=VCFv4.2
+##fileDate=20240912
+##source=MindSetClinicalGenomicsPanel
+##reference=GRCh38
+##INFO=<ID=GENE,Number=1,Type=String,Description="Associated Pharmacogene">
+##INFO=<ID=STAR,Number=1,Type=String,Description="Star Allele Nomenclature">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Sequencing Depth">
+##INFO=<ID=CLNSIG,Number=.,Type=String,Description="Clinical Significance">
+##FILTER=<ID=LowQual,Description="Low sequencing quality score">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+chr1	9754321	rs1057910	A	C	95	PASS	GENE=CYP2C9;STAR=*3;DP=48;CLNSIG=Drug_Response
+chr1	9755400	rs1799853	C	T	88	PASS	GENE=CYP2C9;STAR=*2;DP=42;CLNSIG=Drug_Response
+chr1	23456789	rs12301	G	T	45	PASS	GENE=VKORC1;DP=35;CLNSIG=Sensitivity
+chr10	94762681	rs4244285	G	A	99	PASS	GENE=CYP2C19;STAR=*2;DP=64;CLNSIG=Loss_of_function
+chr10	94775412	rs4986893	G	A	92	PASS	GENE=CYP2C19;STAR=*3;DP=55;CLNSIG=Loss_of_function
+chr10	94812300	rs28399504	A	G	76	PASS	GENE=CYP2C19;STAR=*17;DP=39;CLNSIG=Increased_function
+chr10	96541200	rs1143627	C	T	18	LowQual	GENE=IL1B;DP=12;CLNSIG=Uncertain
+chr19	41040005	rs1065852	C	T	84	PASS	GENE=CYP2D6;STAR=*10;DP=50;CLNSIG=Reduced_activity
+chr19	41052300	rs3892097	C	T	99	PASS	GENE=CYP2D6;STAR=*4;DP=61;CLNSIG=Non_functional
+chr19	41065120	rs5030655	T	A	91	PASS	GENE=CYP2D6;STAR=*6;DP=58;CLNSIG=Loss_of_function

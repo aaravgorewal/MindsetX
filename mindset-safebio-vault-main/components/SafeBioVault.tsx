@@ -4,6 +4,7 @@ import { Shield, FileText, Activity, Lock, AlertTriangle, CheckCircle, Plus, Fin
 import { DocumentItem, ChatMessage, AgenticStep, AgenticWorkflowResult } from '../types';
 import { apiService } from '../services/apiService';
 import { analyzeSDoH, runAgenticWorkflow, simulateDigitalTwin, extractDrugNameFromImage, runFederatedLearning, generateZKP, parseToFHIR } from '../services/geminiService';
+import { parseVcfFile, VcfParseResult } from '../services/vcfParser';
 
 // --- SUB-COMPONENTS DEFINED OUTSIDE TO PREVENT RE-RENDER ISSUES ---
 
@@ -217,6 +218,14 @@ const SafeBioVault: React.FC = () => {
   const [flStep, setFlStep] = useState<'idle' | 'local_training' | 'homomorphic' | 'aggregating' | 'completed'>('idle');
   const [flStatusMessage, setFlStatusMessage] = useState<string>('System standby. Ready for Federated Round #1.');
   const [nodeUpdates, setNodeUpdates] = useState<Record<string, { deltaWeight?: string; localAccuracy?: number; recordsLabel?: string }>>({});
+  
+  // Genomic Bio-Vault State
+  const [vcfData, setVcfData] = useState<VcfParseResult | null>(null);
+  const [isParsingVcf, setIsParsingVcf] = useState<boolean>(false);
+  const [vcfError, setVcfError] = useState<string>('');
+  const [vcfCopiedHash, setVcfCopiedHash] = useState<boolean>(false);
+  const vcfFileInputRef = useRef<HTMLInputElement>(null);
+  
   const [zkpResult, setZkpResult] = useState('');
   const [auditLog, setAuditLog] = useState([
       { id: 'tx-101', time: 'Today, 10:30 AM', actor: 'Dr. Rao (Psychiatry)', action: 'Viewed Sentinel Report', hash: '0x7f2...b92' },
@@ -228,6 +237,7 @@ const SafeBioVault: React.FC = () => {
     { id: '2', title: 'COVID-19 Vaccine', type: 'Vaccine', isVerified: true, date: '2021-08-15' },
     { id: '3', title: 'Dr. Rao (Psychiatry)', type: 'Prescription', isVerified: true, date: '2024-02-20' },
     { id: '4', title: 'MindSet Sentinel Report', type: 'MentalHealth', isVerified: true, date: '2024-05-20' },
+    { id: '5', title: 'Genomic Sequence', type: 'DNA', isVerified: true, date: '2024-05-22' },
   ]);
 
   const mentalHealthDocs = documents.filter(doc => doc.type === 'MentalHealth' || doc.type === 'Prescription');
@@ -707,6 +717,61 @@ const SafeBioVault: React.FC = () => {
   };
 
   const triggerFederatedLearning = triggerFederatedRound;
+
+  const handleVcfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsParsingVcf(true);
+    setVcfError('');
+
+    try {
+      const result = await parseVcfFile(file);
+      if (!result.success) {
+        setVcfError(result.error || 'Failed to parse VCF file. Please check that it is a valid .vcf file.');
+        setVcfData(null);
+      } else {
+        setVcfData(result);
+        setVcfError('');
+
+        // Update documents list with the uploaded genomic sequence
+        const newDoc: DocumentItem = {
+          id: `dna-${Date.now()}`,
+          title: `Genomic Sequence (${result.fileName})`,
+          type: 'DNA',
+          isVerified: true,
+          date: new Date().toISOString().split('T')[0]
+        };
+        setDocuments(prev => [newDoc, ...prev.filter(d => d.type !== 'DNA')]);
+
+        // Add verifiable audit trail record
+        setAuditLog(prev => [
+          {
+            id: `tx-${Date.now()}`,
+            time: 'Just Now',
+            actor: 'Self (BioVault)',
+            action: `Parsed VCF: ${result.summary?.totalVariants} Variants (SHA-256: ${result.sha256Hash.slice(0, 8)}...)`,
+            hash: `0x${result.sha256Hash.slice(0, 8)}`
+          },
+          ...prev
+        ]);
+      }
+    } catch (err: any) {
+      setVcfError(`VCF parse error: ${err?.message || 'Unknown error during file processing'}`);
+      setVcfData(null);
+    } finally {
+      setIsParsingVcf(false);
+      e.target.value = '';
+    }
+  };
+
+  const copyVcfHash = () => {
+    if (vcfData?.sha256Hash) {
+      navigator.clipboard.writeText(vcfData.sha256Hash);
+      setVcfCopiedHash(true);
+      setTimeout(() => setVcfCopiedHash(false), 2000);
+    }
+  };
 
   const triggerZKP = async (claim: string) => {
       setIsSdohAnalyzing(true);
@@ -2345,7 +2410,7 @@ const SafeBioVault: React.FC = () => {
                                </p>
                            </div>
                            <div className="flex items-center gap-2 text-[10px] text-gray-400 justify-center">
-                               <Lock size={10} /> Decrypted from ABHA ID: 92-8821-9921
+                               <Lock size={10} /> Decrypted from ABHA ID: 92-8821-9921 (Simulated)
                            </div>
                            <div className="pt-2">
                                <button onClick={closeSecureViewer} className="w-full py-3 bg-navy-50 hover:bg-navy-100 text-navy-900 font-bold rounded-xl transition-colors flex items-center justify-center gap-2">
@@ -2362,40 +2427,78 @@ const SafeBioVault: React.FC = () => {
                       <div className="bg-gradient-to-r from-teal-800 to-teal-600 p-6 text-white flex justify-between items-center shrink-0">
                           <div>
                               <h3 className="font-bold text-lg">Genomic Sequence</h3>
-                              <p className="text-xs opacity-80">VCF Analysis • Verified Lab</p>
+                              <p className="text-xs opacity-80">
+                                {vcfData ? `${vcfData.fileName} • ${vcfData.metadata?.fileFormat || 'VCF'}` : 'VCF Analysis • Simulated Sandbox'}
+                              </p>
                           </div>
                           <Dna size={40} className="opacity-80" />
                       </div>
                       <div className="p-6 space-y-6 overflow-y-auto">
-                           <div className="grid grid-cols-2 gap-4">
-                               <div className="bg-teal-50 p-3 rounded-xl border border-teal-100">
-                                   <p className="text-[10px] text-teal-600 font-bold uppercase">Variants Analyzed</p>
-                                   <p className="text-xl font-bold text-teal-900">24,592</p>
+                           {vcfData ? (
+                             <>
+                               <div className="grid grid-cols-2 gap-4">
+                                   <div className="bg-teal-50 p-3 rounded-xl border border-teal-100">
+                                       <p className="text-[10px] text-teal-600 font-bold uppercase">Variants Analyzed</p>
+                                       <p className="text-xl font-bold text-teal-900">
+                                         {vcfData.summary?.totalVariants.toLocaleString()}
+                                       </p>
+                                   </div>
+                                   <div className="bg-teal-50 p-3 rounded-xl border border-teal-100">
+                                       <p className="text-[10px] text-teal-600 font-bold uppercase">Filter Pass</p>
+                                       <p className="text-xl font-bold text-indiaGreen-700">
+                                         {vcfData.summary?.passedFilterCount} Passed
+                                       </p>
+                                   </div>
                                </div>
-                               <div className="bg-teal-50 p-3 rounded-xl border border-teal-100">
-                                   <p className="text-[10px] text-teal-600 font-bold uppercase">Risk Markers</p>
-                                   <p className="text-xl font-bold text-red-600">2 <span className="text-xs text-gray-500 font-normal">Detected</span></p>
+
+                               <div className="bg-navy-950 text-gray-200 p-3 rounded-xl font-mono text-[10px] border border-white/10 break-all">
+                                 <div className="text-[9px] uppercase tracking-wider text-teal-400 font-sans font-bold mb-1">
+                                   Cryptographic SHA-256 Hash
+                                 </div>
+                                 {vcfData.sha256Hash}
                                </div>
-                           </div>
-                           <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-                               <h4 className="font-bold text-sm text-navy-900 mb-3 flex items-center gap-2"><Zap size={14} className="text-saffron-500"/> Key Pharmacogenomics</h4>
-                               <ul className="space-y-3">
-                                   <li className="flex justify-between items-center text-sm border-b border-gray-200 pb-2">
-                                       <span className="text-gray-600">CYP2C9</span>
-                                       <span className="font-bold text-red-500 bg-red-50 px-2 py-0.5 rounded text-xs">Slow Metabolizer (*3/*3)</span>
-                                   </li>
-                                   <li className="flex justify-between items-center text-sm border-b border-gray-200 pb-2">
-                                       <span className="text-gray-600">VKORC1</span>
-                                       <span className="font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded text-xs">Normal Sensitivity</span>
-                                   </li>
-                                   <li className="flex justify-between items-center text-sm">
-                                       <span className="text-gray-600">HLA-B</span>
-                                       <span className="font-bold text-gray-800 bg-gray-200 px-2 py-0.5 rounded text-xs">Negative</span>
-                                   </li>
-                               </ul>
-                           </div>
+
+                               {/* Extracted real variants from uploaded VCF */}
+                               <div className="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                                   <h4 className="font-bold text-sm text-navy-900 mb-3 flex items-center gap-2">
+                                     <Activity size={14} className="text-teal-600"/> Parsed Variant Loci
+                                   </h4>
+                                   <ul className="space-y-2 font-mono text-xs">
+                                     {vcfData.variants.slice(0, 5).map((v, idx) => (
+                                       <li key={idx} className="flex justify-between items-center border-b border-gray-200 pb-1.5 last:border-0 last:pb-0">
+                                         <span className="text-gray-700 font-bold">{v.chrom}:{v.pos}</span>
+                                         <span className="text-teal-700 font-semibold">{v.ref} → {v.alt}</span>
+                                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                           {v.filter}
+                                         </span>
+                                       </li>
+                                     ))}
+                                   </ul>
+                               </div>
+                             </>
+                           ) : (
+                             <div className="text-center py-8 px-4 bg-gray-50 rounded-2xl border-2 border-dashed border-gray-200">
+                               <div className="w-12 h-12 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto mb-3">
+                                 <Dna size={24} />
+                               </div>
+                               <h4 className="text-sm font-bold text-navy-900 mb-1">No Data Parsed Yet</h4>
+                               <p className="text-xs text-gray-500 max-w-xs mx-auto mb-4">
+                                 Upload a .vcf file in the Genomic Bio-Vault section to decrypt and inspect variants, quality filters, and cryptographic SHA-256 integrity.
+                               </p>
+                               <button
+                                 onClick={() => {
+                                   closeSecureViewer();
+                                   vcfFileInputRef.current?.click();
+                                 }}
+                                 className="px-4 py-2 bg-navy-900 hover:bg-navy-800 text-white text-xs font-bold rounded-xl transition-all shadow-md inline-flex items-center gap-2"
+                               >
+                                 <Plus size={14} /> Upload VCF Now
+                               </button>
+                             </div>
+                           )}
+
                            <div className="flex items-center gap-2 text-[10px] text-gray-400 justify-center">
-                               <Link size={10} /> Linked to ABHA ID: 92-8821-9921
+                               <Link size={10} /> Linked to ABHA ID: 92-8821-9921 (Simulated)
                            </div>
                            <div className="pt-2">
                                <button onClick={closeSecureViewer} className="w-full py-3 bg-teal-50 hover:bg-teal-100 text-teal-900 font-bold rounded-xl transition-colors flex items-center justify-center gap-2">
@@ -2445,7 +2548,7 @@ const SafeBioVault: React.FC = () => {
             <h1 className="text-2xl font-bold text-navy-900">SafeBio Vault</h1>
             <p className="text-xs text-indiaGreen-600 font-bold flex items-center gap-1 bg-indiaGreen-50 px-2 py-0.5 rounded-full w-fit mt-1">
                 <span className="w-2 h-2 rounded-full bg-indiaGreen-500 animate-pulse"></span>
-                ABDM Sandbox Live
+                ABDM Sandbox (Simulated)
             </p>
           </div>
         </div>
@@ -2691,81 +2794,300 @@ const SafeBioVault: React.FC = () => {
                      <Brain size={24} />
                  </div>
                  <div>
-                     <h3 className="font-bold text-lg text-navy-900">Mental Health Reports</h3>
-                     <p className="text-xs text-gray-500">Sentinel Analytics • E2E Encrypted</p>
-                 </div>
-             </div>
-         </div>
-         <div className="space-y-3">
-             {mentalHealthDocs.length > 0 ? mentalHealthDocs.map(doc => (
-                 <button key={doc.id} onClick={() => openSecureDocument(doc)} className="w-full bg-gray-50 border border-gray-200 shadow-sm p-4 rounded-xl flex items-center justify-between hover:bg-white hover:shadow-md transition-all group">
-                     <div className="flex items-center gap-4">
-                         <div className="w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center text-navy-900">
-                             <Activity size={20} />
-                         </div>
-                         <div className="text-left">
-                             <h4 className="font-bold text-sm text-navy-900">{doc.title}</h4>
-                             <p className="text-[10px] text-gray-500 font-mono">Latest Assessment • {doc.date}</p>
-                         </div>
-                     </div>
-                     <div className="flex items-center gap-2">
-                         <span className="px-2 py-1 bg-saffron-50 text-saffron-700 text-[10px] font-bold rounded flex items-center gap-1 border border-saffron-100">
-                             <Lock size={10}/> SECURE
-                         </span>
-                     </div>
-                 </button>
-             )) : (
-                 <div className="text-center py-4 text-gray-400 text-sm">No reports generated yet. Use the Chat to Assess.</div>
-             )}
-         </div>
-      </div>
+                      <h3 className="font-bold text-lg text-navy-900">Encrypted Health & Genomic Records</h3>
+                      <p className="text-xs text-gray-500">Sentinel Analytics & Bio-Vault Records • E2E Encrypted</p>
+                  </div>
+              </div>
+          </div>
+          <div className="space-y-3">
+              {documents.filter(doc => doc.type === 'MentalHealth' || doc.type === 'Prescription' || doc.type === 'DNA').map(doc => (
+                  <button key={doc.id} onClick={() => openSecureDocument(doc)} className="w-full bg-gray-50 border border-gray-200 shadow-sm p-4 rounded-xl flex items-center justify-between hover:bg-white hover:shadow-md transition-all group">
+                      <div className="flex items-center gap-4">
+                          <div className={`w-10 h-10 rounded-full bg-white border border-gray-200 flex items-center justify-center ${doc.type === 'DNA' ? 'text-teal-600' : 'text-navy-900'}`}>
+                              {doc.type === 'DNA' ? <Dna size={20} /> : <Activity size={20} />}
+                          </div>
+                          <div className="text-left">
+                              <h4 className="font-bold text-sm text-navy-900">{doc.title}</h4>
+                              <p className="text-[10px] text-gray-500 font-mono">
+                                {doc.type === 'DNA'
+                                  ? (vcfData ? `${vcfData.summary?.totalVariants.toLocaleString()} Variants Analyzed • ${doc.date}` : `No VCF Data Parsed • ${doc.date}`)
+                                  : `Latest Assessment • ${doc.date}`}
+                              </p>
+                          </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                          {doc.type === 'DNA' && vcfData && (
+                            <span className="px-2 py-1 bg-teal-50 text-teal-700 text-[10px] font-bold rounded flex items-center gap-1 border border-teal-200">
+                              <FileCheck size={10}/> PARSED
+                            </span>
+                          )}
+                          <span className="px-2 py-1 bg-saffron-50 text-saffron-700 text-[10px] font-bold rounded flex items-center gap-1 border border-saffron-100">
+                              <Lock size={10}/> SECURE
+                          </span>
+                      </div>
+                  </button>
+              ))}
+          </div>
+       </div>
 
       {/* GENOMIC VAULT SECTION */}
-      <div className="bg-white rounded-3xl p-6 shadow-xl border-t-4 border-t-navy-800 relative overflow-hidden mt-6">
-         <div className="flex justify-between items-center mb-6">
+      <div className="bg-white rounded-3xl p-6 shadow-xl border-t-4 border-t-teal-700 relative overflow-hidden mt-6">
+         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
              <div className="flex items-center gap-3">
-                 <div className="p-2 bg-teal-50 rounded-lg text-teal-600">
-                     <Dna size={24} />
+                 <div className="p-2.5 bg-teal-50 rounded-xl text-teal-600 border border-teal-100">
+                     <Dna size={26} />
                  </div>
                  <div>
-                     <h3 className="font-bold text-lg text-navy-900">Genomic Bio-Vault</h3>
-                     <p className="text-xs text-gray-400">VCF Storage • Blockchain Verified</p>
+                     <div className="flex items-center gap-2">
+                       <h3 className="font-bold text-lg text-navy-900">Genomic Bio-Vault</h3>
+                       <span className="px-2 py-0.5 bg-teal-50 text-teal-700 text-[10px] font-bold rounded-full border border-teal-200">
+                         VCF Parser
+                       </span>
+                     </div>
+                     <p className="text-xs text-gray-500 mt-0.5">
+                       Local VCF Variant Parsing • Cryptographic SHA-256 Integrity • Simulated ABHA Sandbox
+                     </p>
                  </div>
              </div>
-             {/* Replace existing upload button with a general one */}
-             <div className="relative group">
-                 <input type="file" onChange={handleFileUpload} className="absolute inset-0 opacity-0 cursor-pointer" accept=".pdf,.png,.jpg,.jpeg,.vcf" />
-                 <button className="px-4 py-2 bg-navy-900 hover:bg-navy-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-colors shadow-lg">
-                     <Plus size={16} /> Upload Data
+             <div className="flex items-center gap-2">
+                 <input
+                     ref={vcfFileInputRef}
+                     type="file"
+                     accept=".vcf,.txt"
+                     onChange={handleVcfUpload}
+                     className="hidden"
+                     id="genomic-vcf-upload-input"
+                 />
+                 {vcfData && (
+                   <button
+                       onClick={() => {
+                         setVcfData(null);
+                         setVcfError('');
+                         setDocuments(prev => [
+                           { id: '5', title: 'Genomic Sequence', type: 'DNA', isVerified: true, date: '2024-05-22' },
+                           ...prev.filter(d => d.type !== 'DNA')
+                         ]);
+                       }}
+                       className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-colors"
+                       title="Clear loaded genomic data"
+                   >
+                       Clear
+                   </button>
+                 )}
+                 <button
+                     onClick={() => vcfFileInputRef.current?.click()}
+                     disabled={isParsingVcf}
+                     className="px-4 py-2 bg-navy-900 hover:bg-navy-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 transition-colors shadow-lg disabled:opacity-50"
+                 >
+                     {isParsingVcf ? <RefreshCw size={14} className="animate-spin" /> : <Plus size={16} />}
+                     {vcfData ? 'Upload New VCF' : 'Upload VCF Data'}
                  </button>
              </div>
          </div>
-         {genomicDocs.length === 0 ? (
-             <div className="text-center py-8 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50">
-                 <Dna size={48} className="mx-auto text-gray-400 mb-2" />
-                 <p className="text-sm text-gray-500">No genomic sequences found.</p>
-                 <p className="text-xs text-gray-400">Upload your VCF file to link with ABHA.</p>
+
+         {/* Parsing Error Banner */}
+         {vcfError && (
+           <div className="mb-4 p-4 rounded-2xl bg-red-50 border border-red-200 flex items-start gap-3 animate-fade-in">
+             <AlertCircle size={20} className="text-red-600 shrink-0 mt-0.5" />
+             <div className="flex-1 min-w-0">
+               <h4 className="text-xs font-bold text-red-900 uppercase tracking-wider mb-0.5">VCF Validation Error</h4>
+               <p className="text-xs text-red-700 leading-relaxed font-mono">{vcfError}</p>
+             </div>
+             <button onClick={() => setVcfError('')} className="p-1 hover:bg-red-100 rounded text-red-600">
+               <X size={14} />
+             </button>
+           </div>
+         )}
+
+         {!vcfData ? (
+             <div className="text-center py-10 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50/70">
+                 <div className="w-16 h-16 rounded-2xl bg-teal-50 text-teal-600 flex items-center justify-center mx-auto mb-3 border border-teal-100">
+                     <Dna size={32} />
+                 </div>
+                 <p className="text-sm font-bold text-gray-700">No genomic sequences loaded.</p>
+                 <p className="text-xs text-gray-400 max-w-md mx-auto mt-1 mb-4">
+                     Upload a standard Variant Call Format (.vcf) file to inspect chromosome variants, filter quality, and verify cryptographic SHA-256 integrity.
+                 </p>
+                 <button
+                     onClick={() => vcfFileInputRef.current?.click()}
+                     className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold rounded-xl transition-all shadow-md inline-flex items-center gap-2"
+                 >
+                     <Plus size={14} /> Select VCF File
+                 </button>
              </div>
          ) : (
-             <div className="space-y-3">
-                 {genomicDocs.map(doc => (
-                     <button key={doc.id} onClick={() => openSecureDocument(doc)} className="w-full bg-navy-50 border border-navy-100 p-4 rounded-xl flex items-center justify-between group hover:bg-white hover:shadow-md transition-all">
-                         <div className="flex items-center gap-4">
-                             <div className="w-10 h-10 rounded-full bg-white flex items-center justify-center text-teal-600 shadow-sm">
-                                 <Activity size={20} />
-                             </div>
-                             <div className="text-left">
-                                 <h4 className="font-bold text-sm text-navy-900">{doc.title}</h4>
-                                 <p className="text-[10px] text-gray-500 font-mono">HASH: 8f2a...91b2 • {doc.date}</p>
-                             </div>
-                         </div>
-                         <div className="flex items-center gap-2">
-                             <span className="px-2 py-1 bg-indiaGreen-50 text-indiaGreen-700 text-[10px] font-bold rounded border border-indiaGreen-200 flex items-center gap-1">
-                                <Link size={10} /> CHAIN
-                             </span>
-                         </div>
+             <div className="space-y-4 animate-fade-in">
+                 {/* File Information & Verified Cryptographic Hash Header */}
+                 <div className="p-4 rounded-2xl bg-navy-950 text-white border border-navy-800">
+                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-white/10">
+                     <div className="flex items-center gap-2 min-w-0">
+                       <FileCheck size={16} className="text-teal-400 shrink-0" />
+                       <span className="font-bold text-sm truncate">{vcfData.fileName}</span>
+                       <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-white/10 text-gray-300">
+                         {vcfData.metadata?.fileFormat || 'VCF'}
+                       </span>
+                       <span className="text-[10px] text-gray-400 font-mono">
+                         {(vcfData.fileSizeBytes / 1024).toFixed(1)} KB
+                       </span>
+                     </div>
+                     <div className="flex items-center gap-2 text-[10px] text-teal-300 font-mono">
+                       <ShieldCheck size={12} className="text-emerald-400" />
+                       <span>Client-side Verified</span>
+                     </div>
+                   </div>
+
+                   {/* Genuine SHA-256 Hash Display */}
+                   <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-black/40 p-2.5 rounded-xl border border-white/5">
+                     <div className="min-w-0 flex-1">
+                       <div className="text-[9px] uppercase tracking-wider text-gray-400 font-bold font-mono">
+                         File Integrity Hash (SHA-256)
+                       </div>
+                       <div className="text-[11px] font-mono text-teal-300 truncate select-all">
+                         {vcfData.sha256Hash}
+                       </div>
+                     </div>
+                     <button
+                       onClick={copyVcfHash}
+                       className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded-lg text-[10px] font-mono font-bold flex items-center gap-1.5 transition-all shrink-0 self-start sm:self-center"
+                     >
+                       {vcfCopiedHash ? <Check size={12} className="text-emerald-400" /> : <Copy size={12} />}
+                       {vcfCopiedHash ? 'Copied' : 'Copy Hash'}
                      </button>
-                 ))}
+                   </div>
+                 </div>
+
+                 {/* 4 Genomic Metric Cards */}
+                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                   <div className="p-3.5 rounded-2xl bg-teal-50 border border-teal-100">
+                     <p className="text-[10px] uppercase font-bold text-teal-700 tracking-wider">Total Variants</p>
+                     <p className="text-2xl font-bold font-mono text-teal-950 mt-1">
+                       {vcfData.summary?.totalVariants.toLocaleString()}
+                     </p>
+                     <p className="text-[10px] text-teal-600 mt-0.5">Parsed Records</p>
+                   </div>
+                   <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-100">
+                     <p className="text-[10px] uppercase font-bold text-emerald-700 tracking-wider">Filter Pass</p>
+                     <p className="text-2xl font-bold font-mono text-emerald-950 mt-1">
+                       {vcfData.summary?.passedFilterCount}
+                     </p>
+                     <p className="text-[10px] text-emerald-600 mt-0.5">
+                       {vcfData.summary ? ((vcfData.summary.passedFilterCount / vcfData.summary.totalVariants) * 100).toFixed(0) : 100}% Pass Rate
+                     </p>
+                   </div>
+                   <div className="p-3.5 rounded-2xl bg-purple-50 border border-purple-100">
+                     <p className="text-[10px] uppercase font-bold text-purple-700 tracking-wider">Chromosomes</p>
+                     <p className="text-2xl font-bold font-mono text-purple-950 mt-1">
+                       {Object.keys(vcfData.summary?.chromosomeCounts || {}).length}
+                     </p>
+                     <p className="text-[10px] text-purple-600 mt-0.5 truncate">
+                       {Object.keys(vcfData.summary?.chromosomeCounts || {}).slice(0, 3).join(', ')}
+                     </p>
+                   </div>
+                   <div className="p-3.5 rounded-2xl bg-navy-50 border border-navy-100">
+                     <p className="text-[10px] uppercase font-bold text-navy-700 tracking-wider">SNV / Indel</p>
+                     <p className="text-2xl font-bold font-mono text-navy-950 mt-1">
+                       {vcfData.summary?.variantTypeCounts.SNV || 0}
+                       <span className="text-xs text-gray-500 font-normal"> / {(vcfData.summary?.variantTypeCounts.Insertion || 0) + (vcfData.summary?.variantTypeCounts.Deletion || 0) + (vcfData.summary?.variantTypeCounts.Indel || 0)}</span>
+                     </p>
+                     <p className="text-[10px] text-navy-600 mt-0.5">Single Nucleotide vs Indels</p>
+                   </div>
+                 </div>
+
+                 {/* Chromosome Breakdown Badges */}
+                 <div className="flex flex-wrap items-center gap-1.5 p-3 rounded-xl bg-gray-50 border border-gray-100">
+                   <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider mr-1">Chr Distribution:</span>
+                   {Object.entries(vcfData.summary?.chromosomeCounts || {}).map(([chr, cnt]) => (
+                     <span key={chr} className="px-2 py-0.5 rounded-md bg-white border border-gray-200 text-[10px] font-mono text-navy-900 shadow-2xs">
+                       <span className="font-bold text-teal-700">{chr}</span>: {cnt}
+                     </span>
+                   ))}
+                 </div>
+
+                 {/* Extracted Variant Sample Table */}
+                 <div className="border border-gray-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+                   <div className="p-3.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
+                     <div className="flex items-center gap-2">
+                       <Activity size={14} className="text-teal-600" />
+                       <h4 className="text-xs font-bold text-navy-900 uppercase tracking-wider">Extracted Variant Records</h4>
+                     </div>
+                     <span className="text-[10px] text-gray-500 font-mono">
+                       Showing {Math.min(10, vcfData.variants.length)} of {vcfData.variants.length}
+                     </span>
+                   </div>
+                   <div className="overflow-x-auto max-h-72">
+                     <table className="w-full text-left border-collapse text-xs">
+                       <thead className="bg-gray-100/80 sticky top-0 z-10 border-b border-gray-200 text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                         <tr>
+                           <th className="py-2.5 px-3">Locus (Chr:Pos)</th>
+                           <th className="py-2.5 px-3">Variant ID</th>
+                           <th className="py-2.5 px-3">Alleles</th>
+                           <th className="py-2.5 px-3">Type</th>
+                           <th className="py-2.5 px-3">Qual</th>
+                           <th className="py-2.5 px-3">Filter</th>
+                           <th className="py-2.5 px-3">Key Annotations</th>
+                         </tr>
+                       </thead>
+                       <tbody className="divide-y divide-gray-100 font-mono text-[11px]">
+                         {vcfData.variants.slice(0, 10).map((variant, idx) => (
+                           <tr key={`${variant.chrom}-${variant.pos}-${idx}`} className="hover:bg-teal-50/40 transition-colors">
+                             <td className="py-2.5 px-3 font-bold text-navy-900 whitespace-nowrap">
+                               {variant.chrom}:{variant.pos.toLocaleString()}
+                             </td>
+                             <td className="py-2.5 px-3 text-gray-600 whitespace-nowrap">
+                               {variant.id !== '.' ? (
+                                 <span className="text-teal-700 font-semibold">{variant.id}</span>
+                               ) : (
+                                 <span className="text-gray-400">.</span>
+                               )}
+                             </td>
+                             <td className="py-2.5 px-3 whitespace-nowrap">
+                               <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-700 font-bold mr-1">{variant.ref}</span>
+                               →
+                               <span className="px-1.5 py-0.5 rounded bg-teal-100 text-teal-800 font-bold ml-1">{variant.alt}</span>
+                             </td>
+                             <td className="py-2.5 px-3 whitespace-nowrap">
+                               <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                                 variant.type === 'SNV' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+                                 variant.type === 'Insertion' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                 variant.type === 'Deletion' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                                 'bg-purple-50 text-purple-700 border border-purple-200'
+                               }`}>
+                                 {variant.type}
+                               </span>
+                             </td>
+                             <td className="py-2.5 px-3 text-gray-600 whitespace-nowrap">
+                               {variant.qual !== '.' ? variant.qual : '-'}
+                             </td>
+                             <td className="py-2.5 px-3 whitespace-nowrap">
+                               <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                                 variant.filter.toUpperCase() === 'PASS' || variant.filter === '.'
+                                   ? 'bg-emerald-100 text-emerald-800'
+                                   : 'bg-amber-100 text-amber-800'
+                               }`}>
+                                 {variant.filter}
+                               </span>
+                             </td>
+                             <td className="py-2.5 px-3 text-gray-500 text-[10px] max-w-xs truncate" title={variant.infoRaw}>
+                               {Object.entries(variant.infoParsed).slice(0, 3).map(([k, v]) => `${k}=${v}`).join('; ') || variant.infoRaw}
+                             </td>
+                           </tr>
+                         ))}
+                       </tbody>
+                     </table>
+                   </div>
+                 </div>
+
+                 {/* Honest Sandbox Integration Note */}
+                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-gray-50 border border-gray-200 text-xs text-gray-500">
+                   <div className="flex items-center gap-2">
+                     <Shield size={14} className="text-teal-600" />
+                     <span>Stored in Local Private Bio-Vault • Verifiable SHA-256 Hash</span>
+                   </div>
+                   <div className="flex items-center gap-2 text-[11px] font-mono text-gray-400">
+                     <Link size={12} />
+                     <span>ABHA ID: 92-8821-9921 (Simulated Sandbox)</span>
+                   </div>
+                 </div>
              </div>
          )}
       </div>
