@@ -1,5 +1,4 @@
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Shield, FileText, Activity, Lock, AlertTriangle, CheckCircle, Plus, Fingerprint, Dna, Database, Server, ScanFace, X, Pill, DownloadCloud, EyeOff, Link, Brain, Hexagon, ChevronLeft, MapPin, Wind, Thermometer, CloudRain, Send, Paperclip, Bot, Layers, Microscope, Coins, Zap, Network, FileKey, Eye, Globe, Siren, QrCode, Stethoscope, TriangleAlert, UserCheck, BellRing, Timer, FileCheck, Clock, Camera, ArrowUpRight, Wrench, Sparkles, Copy, Check, RefreshCw, TrendingUp, AlertCircle, Smartphone, Building2, Watch, Cpu, Play, CheckCircle2, ShieldCheck } from 'lucide-react';
 import { DocumentItem, ChatMessage, AgenticStep, AgenticWorkflowResult } from '../types';
 import { apiService } from '../services/apiService';
@@ -159,8 +158,32 @@ const DEFAULT_MOCK_ACCESS_REQUESTS: AccessRequest[] = [
   }
 ];
 
+// Stable, deterministic ABHA ID generator derived from Firebase UID
+const deriveAbhaId = (uid?: string | null): string => {
+  if (!uid) return '92-8821-9921';
+  let h1 = 0x811c9dc5;
+  let h2 = 0x6c62272e;
+  for (let i = 0; i < uid.length; i++) {
+    const c = uid.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193);
+    h2 = Math.imul(h2 ^ (c * (i + 1)), 0x5bd1e995);
+  }
+  const s1 = Math.abs(h1 >>> 0).toString().padStart(6, '0');
+  const s2 = Math.abs(h2 >>> 0).toString().padStart(6, '0');
+  const digits = (s1 + s2).slice(0, 10);
+  return `${digits.slice(0, 2)}-${digits.slice(2, 6)}-${digits.slice(6, 10)}`;
+};
+
 const SafeBioVault: React.FC<SafeBioVaultProps> = ({ onPendingRequestsChange }) => {
   const { user } = useAuth();
+
+  const userDisplayName = useMemo(() => {
+    return user?.displayName || user?.email?.split('@')[0] || 'Member';
+  }, [user?.displayName, user?.email]);
+
+  const derivedAbhaId = useMemo(() => {
+    return deriveAbhaId(user?.uid);
+  }, [user?.uid]);
   // Vault State
   const [isLocked, setIsLocked] = useState(true);
   const [setupMode, setSetupMode] = useState(false);
@@ -2465,7 +2488,7 @@ const SafeBioVault: React.FC<SafeBioVaultProps> = ({ onPendingRequestsChange }) 
                                </p>
                            </div>
                            <div className="flex items-center gap-2 text-[10px] text-gray-400 justify-center">
-                               <Lock size={10} /> Decrypted from ABHA ID: 92-8821-9921 (Simulated)
+                               <Lock size={10} /> Decrypted from ABHA ID: {derivedAbhaId} (Simulated)
                            </div>
                            <div className="pt-2">
                                <button onClick={closeSecureViewer} className="w-full py-3 bg-navy-50 hover:bg-navy-100 text-navy-900 font-bold rounded-xl transition-colors flex items-center justify-center gap-2">
@@ -2553,7 +2576,7 @@ const SafeBioVault: React.FC<SafeBioVaultProps> = ({ onPendingRequestsChange }) 
                            )}
 
                            <div className="flex items-center gap-2 text-[10px] text-gray-400 justify-center">
-                               <Link size={10} /> Linked to ABHA ID: 92-8821-9921 (Simulated)
+                               <Link size={10} /> Linked to ABHA ID: {derivedAbhaId} (Simulated)
                            </div>
                            <div className="pt-2">
                                <button onClick={closeSecureViewer} className="w-full py-3 bg-teal-50 hover:bg-teal-100 text-teal-900 font-bold rounded-xl transition-colors flex items-center justify-center gap-2">
@@ -2827,14 +2850,14 @@ const SafeBioVault: React.FC<SafeBioVaultProps> = ({ onPendingRequestsChange }) 
                 <div className="flex items-center justify-between mb-4">
                     <img src="https://abdm.gov.in/assets/images/logo/abdm_logo.svg" alt="ABDM" className="h-6" />
                 </div>
-                <p className="text-2xl font-mono tracking-widest font-bold text-navy-900">92-8821-9921</p>
+                <p className="text-2xl font-mono tracking-widest font-bold text-navy-900">{derivedAbhaId}</p>
                 <div className="mt-4 flex justify-between items-end">
                     <div className="text-left">
                          <p className="text-[10px] text-gray-400 font-bold">NAME</p>
-                         <p className="text-sm font-bold">Rohan Das</p>
+                         <p className="text-sm font-bold">{userDisplayName}</p>
                     </div>
                     <div className="w-12 h-12 bg-white p-1 rounded-lg border border-gray-200">
-                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=ABHA:9288219921`} alt="QR" className="w-full h-full" />
+                        <img src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=ABHA:${derivedAbhaId.replace(/-/g, '')}`} alt="QR" className="w-full h-full" />
                     </div>
                 </div>
             </div>
@@ -3140,7 +3163,7 @@ const SafeBioVault: React.FC<SafeBioVaultProps> = ({ onPendingRequestsChange }) 
                    </div>
                    <div className="flex items-center gap-2 text-[11px] font-mono text-gray-400">
                      <Link size={12} />
-                     <span>ABHA ID: 92-8821-9921 (Simulated Sandbox)</span>
+                     <span>ABHA ID: {derivedAbhaId} (Simulated Sandbox)</span>
                    </div>
                  </div>
              </div>
