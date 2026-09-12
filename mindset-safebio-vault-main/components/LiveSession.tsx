@@ -1,10 +1,18 @@
 
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { Mic, MicOff, PhoneOff, Video, Star, ChevronLeft, CheckCircle, Brain, X, Calendar as CalendarIcon, ExternalLink, RefreshCw, User, Briefcase, QrCode, ShieldCheck, MapPin, GraduationCap, Building2, Clock, Award, Languages } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, Video, Star, ChevronLeft, CheckCircle, Brain, X, Calendar as CalendarIcon, ExternalLink, RefreshCw, User, Briefcase, QrCode, ShieldCheck, MapPin, GraduationCap, Building2, Clock, Award, Languages, AlertCircle, Volume2, Sparkles, Zap } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { GoogleGenAI, LiveServerMessage } from '@google/genai';
 import { useAuth } from '../context/AuthContext';
 import { saveUserBooking } from '../services/userService';
+import { sendChatMessage } from '../services/geminiService';
+import {
+  synthesizeAndPlay,
+  stopActiveSpeech,
+  TtsProvider,
+  TtsProviderLabel,
+  TTS_PROVIDER_LABELS,
+} from '../services/ttsService';
 
 interface LiveSessionProps {
   onEnd: () => void;
@@ -228,169 +236,594 @@ const SPECIALISTS: Specialist[] = [
   }
 ];
 
-// --- SUB-COMPONENT: GEMINI LIVE SESSION ---
+// --- SUB-COMPONENT: MINDSET AI VOICE CALL (NATIVE SPEECH RECOGNITION) ---
 const GeminiLiveSession = ({ onEnd }: { onEnd: () => void }) => {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'error' | 'disconnected'>('connecting');
   const [isMuted, setIsMuted] = useState(false);
-  const apiKey = process.env.API_KEY || '';
-  
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const wsRef = useRef<any>(null);
-  const nextStartTimeRef = useRef<number>(0);
+  const [isUnsupported, setIsUnsupported] = useState(false);
+  const [selectedLang, setSelectedLang] = useState<'en-IN' | 'hi-IN'>(() => {
+    try {
+      return (localStorage.getItem('mindset_voice_lang') as 'en-IN' | 'hi-IN') || 'en-IN';
+    } catch {
+      return 'en-IN';
+    }
+  });
+
+  const [interimTranscript, setInterimTranscript] = useState('');
+  const [lastFinalTranscript, setLastFinalTranscript] = useState('');
+  const [aiSubtitle, setAiSubtitle] = useState('');
+  const [isAiThinking, setIsAiThinking] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  const [ttsProvider, setTtsProvider] = useState<TtsProvider | null>(null);
+  const [ttsProviderLabel, setTtsProviderLabel] = useState<TtsProviderLabel | null>(null);
+
+  const recognitionRef = useRef<any>(null);
   const isMountedRef = useRef<boolean>(true);
+  const isActiveRef = useRef<boolean>(true);
+  const isMutedRef = useRef<boolean>(false);
+  const selectedLangRef = useRef<'en-IN' | 'hi-IN'>(selectedLang);
+  const turnAccumulatorRef = useRef<string>('');
+  const liveInterimRef = useRef<string>('');
+  const silenceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const conversationHistoryRef = useRef<{ role: string; parts: { text: string }[] }[]>([]);
 
-  useEffect(() => {
-    isMountedRef.current = true;
-    startSession();
-    return () => {
-      isMountedRef.current = false;
-      cleanup();
-    };
-  }, []);
+  isMutedRef.current = isMuted;
+  selectedLangRef.current = selectedLang;
 
-  const cleanup = async () => {
-    if (streamRef.current) {
-        streamRef.current.getTracks().forEach(t => t.stop());
-        streamRef.current = null;
+  const handleAiTurn = async (userUtterance: string) => {
+    if (!userUtterance.trim()) return;
+    stopActiveSpeech();
+    setIsAiThinking(true);
+    setIsAiSpeaking(false);
+    setAiSubtitle('');
+
+    let replyToSpeak = '';
+    try {
+      const historySnapshot = [...conversationHistoryRef.current];
+      console.log('================ [DIAGNOSIS: LIVESESSION TRIGGER] ================');
+      console.log('Language Toggle State (selectedLang):', selectedLang);
+      console.log('Language Toggle Ref (selectedLangRef):', selectedLangRef.current);
+      console.log('History snapshot length:', historySnapshot.length);
+      console.log('History snapshot:', JSON.stringify(historySnapshot, null, 2));
+      console.log('User utterance:', userUtterance);
+      console.log('==================================================================');
+
+      const result = await sendChatMessage(
+        historySnapshot,
+        userUtterance,
+        false, // useSearch
+        false, // useMaps
+        undefined, // coords
+        true, // isVoiceMode
+        selectedLangRef.current // targetLanguage
+      );
+
+      replyToSpeak = result.text.trim();
+      console.log(`[MindSet AI Voice Response (${selectedLangRef.current})]: "${replyToSpeak}"`);
+      if (isMountedRef.current) {
+        setAiSubtitle(replyToSpeak);
+      }
+
+      conversationHistoryRef.current.push(
+        { role: 'user', parts: [{ text: userUtterance }] },
+        { role: 'model', parts: [{ text: replyToSpeak }] }
+      );
+    } catch (err: any) {
+      console.error('Voice chat error:', err);
+      const isHindi = selectedLangRef.current === 'hi-IN';
+      replyToSpeak = isHindi
+        ? 'हाँ, मैं आपकी बात समझ सकता हूँ। गहरी साँस लीजिए, हम साथ मिलकर इसका समाधान निकालेंगे।'
+        : "Hmm, I hear you. Take a slow, deep breath, and we will take this one step at a time.";
+      if (isMountedRef.current) {
+        setAiSubtitle(replyToSpeak);
+      }
+    } finally {
+      if (isMountedRef.current) {
+        setIsAiThinking(false);
+      }
     }
-    if (sourceRef.current) {
-        sourceRef.current.disconnect();
-        sourceRef.current = null;
-    }
-    if (processorRef.current) {
-        processorRef.current.disconnect();
-        processorRef.current = null;
-    }
-    if (audioContextRef.current) {
-        if (audioContextRef.current.state !== 'closed') {
-            try { await audioContextRef.current.close(); } catch (e) {}
+
+    // Trigger multi-tier TTS playback for the AI reply
+    if (replyToSpeak && isMountedRef.current && !isMutedRef.current) {
+      try {
+        const ttsResult = await synthesizeAndPlay(replyToSpeak, {
+          lang: selectedLangRef.current,
+          onStart: (provider, label) => {
+            if (!isMountedRef.current) return;
+            setTtsProvider(provider);
+            setTtsProviderLabel(label);
+            setIsAiSpeaking(true);
+          },
+          onEnd: () => {
+            if (!isMountedRef.current) return;
+            setIsAiSpeaking(false);
+          },
+        });
+
+        if (isMountedRef.current) {
+          setTtsProvider(ttsResult.provider);
+          setTtsProviderLabel(ttsResult.providerLabel);
         }
-        audioContextRef.current = null;
-    }
-    if (wsRef.current) {
-        try { wsRef.current.close(); } catch (e) {}
-        wsRef.current = null;
+      } catch (ttsErr) {
+        console.warn('TTS playback error:', ttsErr);
+        if (isMountedRef.current) {
+          setIsAiSpeaking(false);
+        }
+      }
     }
   };
 
-  const startSession = async () => {
+  const commitTurn = () => {
+    const turnText = (turnAccumulatorRef.current || liveInterimRef.current).trim();
+    if (turnText) {
+      console.log(`[MindSet Voice Turn Completed - ${selectedLangRef.current}]: "${turnText}"`);
+      setLastFinalTranscript(turnText);
+      setInterimTranscript('');
+      setIsSpeaking(false);
+      turnAccumulatorRef.current = '';
+      liveInterimRef.current = '';
+
+      // Trigger MindSet AI conversational turn
+      handleAiTurn(turnText);
+    }
+  };
+
+  const resetSilenceTimer = (delayMs: number = 1300) => {
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+    }
+    silenceTimerRef.current = setTimeout(() => {
+      commitTurn();
+    }, delayMs);
+  };
+
+  const startRecognition = (lang: 'en-IN' | 'hi-IN') => {
+    const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionClass) {
+      setIsUnsupported(true);
+      setStatus('error');
+      return;
+    }
+
+    // Stop existing instance if any
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.stop();
+      } catch (e) {}
+      recognitionRef.current = null;
+    }
+
     try {
-      if (!apiKey) throw new Error("API Key required");
+      const recognition = new SpeechRecognitionClass();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = lang;
+      recognition.maxAlternatives = 1;
 
-      const ai = new GoogleGenAI({ apiKey });
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      audioContextRef.current = new AudioContextClass({ sampleRate: 24000 });
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: { sampleRate: 16000, channelCount: 1 }});
-      if (!isMountedRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
-      streamRef.current = stream;
-
-      const sessionPromise = ai.live.connect({
-        model: 'gemini-2.5-flash-native-audio-preview-12-2025',
-        callbacks: {
-            onopen: () => { if (isMountedRef.current) setStatus('connected'); },
-            onmessage: (message: LiveServerMessage) => {
-                if (!isMountedRef.current) return;
-                const data = message.serverContent?.modelTurn?.parts?.[0]?.inlineData?.data;
-                if (data && audioContextRef.current) playAudioChunk(data);
-            },
-            onclose: () => { if (isMountedRef.current) { setStatus('disconnected'); onEnd(); } },
-            onerror: (e) => { console.error("Session error", e); if (isMountedRef.current) setStatus('error'); }
-        },
-        config: { responseModalities: ["AUDIO" as any], systemInstruction: "You are a helpful, calm mental health assistant." }
-      });
-      
-      const session = await sessionPromise;
-      if (!isMountedRef.current) { session.close(); return; }
-      wsRef.current = session;
-
-      const inputContext = new AudioContext({ sampleRate: 16000 });
-      const source = inputContext.createMediaStreamSource(stream);
-      const processor = inputContext.createScriptProcessor(4096, 1, 1);
-      
-      processor.onaudioprocess = (e) => {
-        if (isMuted || !isMountedRef.current) return;
-        const inputData = e.inputBuffer.getChannelData(0);
-        const l = inputData.length;
-        const int16 = new Int16Array(l);
-        for (let i = 0; i < l; i++) int16[i] = inputData[i] * 32768;
-        let binary = '';
-        const bytes = new Uint8Array(int16.buffer);
-        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-        const base64Data = btoa(binary);
-
-        sessionPromise.then(currentSession => {
-            if(isMountedRef.current) {
-                currentSession.sendRealtimeInput({ media: { mimeType: "audio/pcm;rate=16000", data: base64Data } });
-            }
-        });
+      recognition.onstart = () => {
+        if (!isMountedRef.current) return;
+        setStatus('connected');
       };
 
-      source.connect(processor);
-      processor.connect(inputContext.destination);
-      processorRef.current = processor;
-      sourceRef.current = source as any; 
+      recognition.onspeechstart = () => {
+        if (!isMountedRef.current) return;
+        stopActiveSpeech();
+        setIsAiSpeaking(false);
+        setIsSpeaking(true);
+      };
 
-    } catch (error) {
-      console.error("Live Session Error:", error);
+      recognition.onresult = (event: any) => {
+        if (!isMountedRef.current || isMutedRef.current) return;
+
+        let interim = '';
+        let finalChunk = '';
+
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const item = event.results[i];
+          const transcript = item[0]?.transcript || '';
+          if (item.isFinal) {
+            finalChunk += transcript;
+          } else {
+            interim += transcript;
+          }
+        }
+
+        if (finalChunk.trim() || interim.trim()) {
+          stopActiveSpeech();
+          setIsAiSpeaking(false);
+        }
+
+        if (finalChunk.trim()) {
+          turnAccumulatorRef.current += (turnAccumulatorRef.current ? ' ' : '') + finalChunk.trim();
+        }
+
+        const display = (turnAccumulatorRef.current ? turnAccumulatorRef.current + ' ' : '') + interim.trim();
+        liveInterimRef.current = display;
+        setInterimTranscript(display);
+        setIsSpeaking(true);
+
+        // Reset silence timer: 1.3s of silence commits this turn
+        resetSilenceTimer(1300);
+      };
+
+      recognition.onspeechend = () => {
+        if (!isMountedRef.current) return;
+        // User stopped speaking: commit turn shortly
+        resetSilenceTimer(750);
+      };
+
+      let hasRecognitionError = false;
+      recognition.onerror = (event: any) => {
+        console.warn('SpeechRecognition error event:', event.error);
+        if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+          hasRecognitionError = true;
+          if (isMountedRef.current) setStatus('error');
+        }
+      };
+
+      recognition.onend = () => {
+        if (!isMountedRef.current || !isActiveRef.current || hasRecognitionError) return;
+        // If turn was pending, commit it
+        commitTurn();
+        // Auto restart continuous listening if not muted and no error
+        if (!isMutedRef.current && !hasRecognitionError) {
+          try {
+            recognition.start();
+          } catch (e) {}
+        }
+      };
+
+      recognitionRef.current = recognition;
+      if (typeof window !== 'undefined') {
+        (window as any).__activeRecognitionInstance = recognition;
+        (window as any).__triggerAiTurn = (text: string) => handleAiTurn(text);
+        (window as any).__stopActiveSpeech = stopActiveSpeech;
+        (window as any).__synthesizeAndPlay = synthesizeAndPlay;
+      }
+      recognition.start();
+    } catch (err) {
+      console.error('Failed to initialize SpeechRecognition:', err);
       if (isMountedRef.current) setStatus('error');
     }
   };
 
-  const playAudioChunk = async (base64Data: string) => {
-     if (!audioContextRef.current || audioContextRef.current.state === 'closed') return;
-     try {
-         const binaryString = atob(base64Data);
-         const len = binaryString.length;
-         const bytes = new Uint8Array(len);
-         for (let i = 0; i < len; i++) bytes[i] = binaryString.charCodeAt(i);
-         const int16 = new Int16Array(bytes.buffer);
-         const float32 = new Float32Array(int16.length);
-         for(let i=0; i<int16.length; i++) float32[i] = int16[i] / 32768.0;
-         const buffer = audioContextRef.current.createBuffer(1, float32.length, 24000);
-         buffer.copyToChannel(float32, 0);
-         const source = audioContextRef.current.createBufferSource();
-         source.buffer = buffer;
-         source.connect(audioContextRef.current.destination);
-         const now = audioContextRef.current.currentTime;
-         const startTime = Math.max(now, nextStartTimeRef.current);
-         source.start(startTime);
-         nextStartTimeRef.current = startTime + buffer.duration;
-     } catch (e) { console.error("Error playing audio chunk", e); }
+  useEffect(() => {
+    isMountedRef.current = true;
+    isActiveRef.current = true;
+
+    const SpeechRecognitionClass = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognitionClass) {
+      setIsUnsupported(true);
+      setStatus('error');
+      return;
+    }
+
+    startRecognition(selectedLang);
+
+    return () => {
+      isMountedRef.current = false;
+      isActiveRef.current = false;
+      stopActiveSpeech();
+      if (typeof window !== 'undefined') {
+        delete (window as any).__activeRecognitionInstance;
+        delete (window as any).__triggerAiTurn;
+        delete (window as any).__stopActiveSpeech;
+        delete (window as any).__synthesizeAndPlay;
+      }
+      if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.onend = null;
+          recognitionRef.current.onerror = null;
+          recognitionRef.current.stop();
+        } catch (e) {}
+        recognitionRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleLanguageChange = (lang: 'en-IN' | 'hi-IN') => {
+    if (lang === selectedLang) return;
+    stopActiveSpeech();
+    setIsAiSpeaking(false);
+    setSelectedLang(lang);
+    selectedLangRef.current = lang;
+    try {
+      localStorage.setItem('mindset_voice_lang', lang);
+    } catch {}
+    
+    // Commit any pending turn before switching
+    commitTurn();
+
+    if (!isMuted && !isUnsupported) {
+      startRecognition(lang);
+    }
   };
 
-  const handleUserEnd = () => { cleanup(); setStatus('disconnected'); onEnd(); };
+  const handleToggleMute = () => {
+    stopActiveSpeech();
+    setIsAiSpeaking(false);
+    const nextMuted = !isMuted;
+    setIsMuted(nextMuted);
+    isMutedRef.current = nextMuted;
+
+    if (recognitionRef.current) {
+      if (nextMuted) {
+        commitTurn();
+        try {
+          recognitionRef.current.stop();
+        } catch (e) {}
+      } else {
+        try {
+          recognitionRef.current.start();
+        } catch (e) {}
+      }
+    }
+  };
+
+  const handleUserEnd = () => {
+    isActiveRef.current = false;
+    stopActiveSpeech();
+    setIsAiSpeaking(false);
+    commitTurn();
+    if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+      } catch (e) {}
+      recognitionRef.current = null;
+    }
+    setStatus('disconnected');
+    onEnd();
+  };
+
+  // If browser does not support SpeechRecognition
+  if (isUnsupported) {
+    return (
+      <div className="fixed inset-0 z-[100] bg-charcoal flex flex-col items-center justify-center p-6 text-white animate-fade-in">
+        <div className="text-center space-y-6 max-w-md px-6 py-8 rounded-3xl bg-charcoal border border-amber-500/30 shadow-2xl relative z-10">
+          <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto text-amber-400">
+            <AlertCircle size={32} />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-xl font-bold text-white">Browser Not Supported</h2>
+            <p className="text-sm text-gray-300 leading-relaxed">
+              Voice call requires Chrome or Edge for real-time speech recognition.
+            </p>
+          </div>
+          <div className="pt-2">
+            <button
+              onClick={onEnd}
+              className="w-full py-3 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white font-semibold text-sm transition-colors cursor-pointer"
+            >
+              Return to Therapy Hub
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="fixed inset-0 z-[100] bg-charcoal flex flex-col items-center justify-center p-6 animate-fade-in text-white">
+    <div className="fixed inset-0 z-[100] bg-charcoal flex flex-col items-center justify-between p-6 sm:p-8 animate-fade-in text-white">
       {/* Background Ambience */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
-           <div className="absolute top-[20%] right-[10%] w-[40%] h-[40%] bg-saffron-500/20 rounded-full blur-[100px]"></div>
-           <div className="absolute bottom-[20%] left-[10%] w-[40%] h-[40%] bg-teal-500/20 rounded-full blur-[100px]"></div>
+        <div className="absolute top-[20%] right-[10%] w-[45%] h-[45%] bg-saffron-500/15 rounded-full blur-[110px]" />
+        <div className="absolute bottom-[20%] left-[10%] w-[45%] h-[45%] bg-teal-500/15 rounded-full blur-[110px]" />
       </div>
 
-      <div className="text-center space-y-8 relative z-10">
-        <div className="relative">
-          <div className={`w-32 h-32 rounded-full flex items-center justify-center border-4 border-white/10 shadow-xl ${status === 'connected' ? 'bg-white/10 animate-pulse' : 'bg-red-500/20'}`}>
-             <Brain size={48} className={status === 'connected' ? 'text-teal-400' : 'text-red-400'} />
-          </div>
-          {status === 'connected' && <div className="absolute inset-0 rounded-full border border-teal-500/30 animate-ping"></div>}
+      {/* Top Header / Language Switcher */}
+      <div className="w-full max-w-xl flex items-center justify-between relative z-10 pt-4 sm:pt-6">
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-xs font-semibold tracking-wide text-gray-300 uppercase">MindSet AI Voice</span>
         </div>
-        <div>
-          <h2 className="text-2xl font-bold text-white mb-2">
-            {status === 'connecting' ? 'Connecting to MindSet AI...' : status === 'error' ? 'Connection Failed' : 'AI Listening...'}
-          </h2>
-          <p className="text-gray-400 font-medium">{status === 'error' ? 'Please check your connection.' : "Speak naturally. I'm here to help."}</p>
-        </div>
-        <div className="flex space-x-6 justify-center">
-          <button onClick={() => setIsMuted(!isMuted)} className={`p-4 rounded-full shadow-lg transition-transform hover:scale-105 ${isMuted ? 'bg-red-500 text-white' : 'bg-white/10 text-gray-300 hover:text-white'}`}>
-            {isMuted ? <MicOff /> : <Mic />}
+
+        {/* Language Toggle */}
+        <div className="inline-flex items-center p-1 rounded-full bg-white/10 border border-white/10 backdrop-blur-md shadow-sm">
+          <button
+            onClick={() => handleLanguageChange('en-IN')}
+            className={`px-3.5 py-1 rounded-full text-xs font-semibold transition-all cursor-pointer ${
+              selectedLang === 'en-IN'
+                ? 'bg-teal-500 text-white shadow'
+                : 'text-gray-300 hover:text-white'
+            }`}
+          >
+            English
           </button>
-          <button onClick={handleUserEnd} className="p-4 rounded-full bg-red-600 text-white hover:bg-red-700 shadow-lg transition-transform hover:scale-105"><PhoneOff /></button>
+          <button
+            onClick={() => handleLanguageChange('hi-IN')}
+            className={`px-3.5 py-1 rounded-full text-xs font-semibold font-hindi transition-all cursor-pointer ${
+              selectedLang === 'hi-IN'
+                ? 'bg-teal-500 text-white shadow'
+                : 'text-gray-300 hover:text-white'
+            }`}
+          >
+            हिंदी
+          </button>
         </div>
+      </div>
+
+      {/* Center Call Visuals & Status */}
+      <div className="text-center space-y-6 relative z-10 my-auto w-full max-w-md">
+        <div className="relative mx-auto w-32 h-32 flex items-center justify-center">
+          <div
+            className={`w-32 h-32 rounded-full flex items-center justify-center border-4 border-white/10 shadow-2xl transition-all duration-300 ${
+              isAiSpeaking
+                ? 'bg-emerald-500/25 scale-105 border-emerald-400/60 shadow-emerald-500/30 ring-4 ring-emerald-500/20'
+                : isSpeaking
+                ? 'bg-teal-500/20 scale-105 border-teal-400/40 shadow-teal-500/20'
+                : status === 'connected'
+                ? 'bg-white/10'
+                : 'bg-red-500/20'
+            }`}
+          >
+            <Brain
+              size={48}
+              className={`transition-colors duration-300 ${
+                isAiSpeaking
+                  ? 'text-emerald-300 animate-pulse'
+                  : isSpeaking
+                  ? 'text-teal-300 animate-pulse'
+                  : status === 'connected'
+                  ? 'text-teal-400'
+                  : 'text-red-400'
+              }`}
+            />
+          </div>
+          {status === 'connected' && !isMuted && (
+            <div
+              className={`absolute inset-0 rounded-full border ${
+                isAiSpeaking
+                  ? 'border-emerald-400/50 animate-ping'
+                  : isSpeaking
+                  ? 'border-teal-500/30 animate-ping'
+                  : 'border-teal-500/20'
+              }`}
+            />
+          )}
+        </div>
+
+        <div>
+          <h2 className="text-2xl font-bold text-white mb-1.5">
+            {status === 'connecting'
+              ? 'Connecting to MindSet AI...'
+              : status === 'error'
+              ? 'Connection Issue'
+              : isAiThinking
+              ? 'MindSet AI Thinking...'
+              : isAiSpeaking
+              ? 'MindSet AI Speaking...'
+              : isSpeaking
+              ? 'Speaking Detected...'
+              : 'AI Listening...'}
+          </h2>
+          <p className="text-xs sm:text-sm text-gray-400 font-medium">
+            {status === 'error'
+              ? 'Check mic permissions in your browser.'
+              : isMuted
+              ? 'Microphone muted. Tap mic icon to unmute.'
+              : isAiThinking
+              ? 'Synthesizing empathetic response...'
+              : isAiSpeaking
+              ? 'Voice output in progress. Tap mic or speak to interrupt.'
+              : `Speak naturally in ${selectedLang === 'hi-IN' ? 'Hindi (हिंदी)' : 'Indian English'}.`}
+          </p>
+        </div>
+
+        {/* AI Subtitle / Caption Card (Primary AI response display + Voice Provider Badge) */}
+        {isAiThinking ? (
+          <div className="w-full px-5 py-4 rounded-2xl bg-teal-500/10 border border-teal-500/30 backdrop-blur-md min-h-[85px] flex items-center justify-center gap-3 text-teal-300 shadow-lg animate-pulse">
+            <div className="flex gap-1.5">
+              <div className="w-2 h-2 rounded-full bg-teal-400 animate-bounce" />
+              <div className="w-2 h-2 rounded-full bg-teal-400 animate-bounce delay-150" />
+              <div className="w-2 h-2 rounded-full bg-teal-400 animate-bounce delay-300" />
+            </div>
+            <span className="text-xs sm:text-sm font-semibold">MindSet AI is listening & thinking...</span>
+          </div>
+        ) : aiSubtitle ? (
+          <div className="w-full px-5 py-4 rounded-2xl bg-teal-500/15 border border-teal-500/40 backdrop-blur-md min-h-[95px] flex flex-col justify-center text-center shadow-xl animate-fade-in space-y-2">
+            <div className="flex items-center justify-between gap-1.5 text-[10px] font-bold text-teal-400 uppercase tracking-wider px-1">
+              <div className="flex items-center gap-1.5">
+                <Brain size={13} className="text-teal-400" />
+                <span>MindSet AI Subtitle</span>
+              </div>
+              {isAiSpeaking && (
+                <div className="flex items-center gap-1 text-emerald-400 font-semibold lowercase">
+                  <span className="w-1 h-3 rounded-full bg-emerald-400 animate-pulse" />
+                  <span className="w-1 h-4 rounded-full bg-emerald-400 animate-pulse delay-100" />
+                  <span className="w-1 h-2 rounded-full bg-emerald-400 animate-pulse delay-200" />
+                  <span className="w-1 h-3 rounded-full bg-emerald-400 animate-pulse delay-300" />
+                  <span className="text-[9px] uppercase tracking-wider ml-1">Speaking</span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-sm sm:text-base text-teal-50 font-medium leading-relaxed font-hindi">
+              "{aiSubtitle}"
+            </p>
+
+            {/* Honest Provider Badge */}
+            {ttsProviderLabel && (
+              <div className="pt-2 border-t border-white/10 flex items-center justify-center">
+                {ttsProvider === 'elevenlabs' && (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-emerald-300 bg-emerald-500/20 border border-emerald-500/40 px-3 py-1 rounded-full shadow-sm">
+                    <Sparkles size={12} className="text-emerald-400" />
+                    <span>Natural Voice (ElevenLabs)</span>
+                  </span>
+                )}
+                {ttsProvider === 'openai' && (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-teal-300 bg-teal-500/20 border border-teal-500/40 px-3 py-1 rounded-full shadow-sm">
+                    <Zap size={12} className="text-teal-400" />
+                    <span>Natural Voice (OpenAI)</span>
+                  </span>
+                )}
+                {ttsProvider === 'offline' && (
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-300 bg-amber-500/20 border border-amber-500/40 px-3 py-1 rounded-full shadow-sm">
+                    <Volume2 size={12} className="text-amber-400" />
+                    <span>Basic Voice (Offline)</span>
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+        ) : null}
+
+        {/* User Speech Feedback */}
+        <div className="w-full px-5 py-3 rounded-2xl bg-white/[0.04] border border-white/10 backdrop-blur-sm min-h-[60px] flex flex-col justify-center text-center shadow-inner">
+          {interimTranscript ? (
+            <div className="space-y-1 animate-fade-in">
+              <div className="flex items-center justify-center gap-1.5 text-[10px] font-bold text-teal-400 uppercase tracking-wider">
+                <span className="w-1.5 h-1.5 rounded-full bg-teal-400 animate-ping" />
+                <span>Live Speech ({selectedLang === 'hi-IN' ? 'हिंदी' : 'English'})</span>
+              </div>
+              <p className="text-sm sm:text-base text-white font-medium italic leading-relaxed font-hindi">
+                "{interimTranscript}"
+              </p>
+            </div>
+          ) : lastFinalTranscript ? (
+            <div className="space-y-0.5 animate-fade-in">
+              <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                You Said
+              </div>
+              <p className="text-xs sm:text-sm text-gray-200 font-medium leading-relaxed font-hindi">
+                "{lastFinalTranscript}"
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-gray-500">
+              {isMuted
+                ? 'Unmute to start speaking.'
+                : 'Say something — speech recognition is active.'}
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Bottom Controls */}
+      <div className="flex items-center space-x-6 justify-center relative z-10 pb-4">
+        <button
+          onClick={handleToggleMute}
+          className={`p-4 rounded-full shadow-lg transition-transform hover:scale-105 active:scale-95 cursor-pointer ${
+            isMuted
+              ? 'bg-red-500 text-white shadow-red-500/30'
+              : 'bg-white/10 text-gray-300 hover:text-white border border-white/10'
+          }`}
+          aria-label={isMuted ? 'Unmute microphone' : 'Mute microphone'}
+        >
+          {isMuted ? <MicOff size={22} /> : <Mic size={22} />}
+        </button>
+        <button
+          onClick={handleUserEnd}
+          className="p-4 rounded-full bg-red-600 text-white hover:bg-red-700 shadow-lg shadow-red-600/30 transition-transform hover:scale-105 active:scale-95 cursor-pointer"
+          aria-label="End voice call"
+        >
+          <PhoneOff size={22} />
+        </button>
       </div>
     </div>
   );

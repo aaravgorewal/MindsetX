@@ -201,7 +201,7 @@ const App: React.FC = () => {
         {/* Scrollable Main View */}
         <main className={`flex-1 overflow-y-auto overflow-x-hidden scroll-smooth relative ${
           // Add padding bottom on mobile for Bottom Nav
-          currentScreen !== Screen.LIVE ? 'pb-24 md:pb-6' : ''
+          currentScreen !== Screen.LIVE ? 'pb-24 md:pb-6' : 'z-[60]'
         }`}>
            
            {/* Background Ambience (Relative to Content) */}

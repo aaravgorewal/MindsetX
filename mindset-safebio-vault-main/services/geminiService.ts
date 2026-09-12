@@ -53,20 +53,18 @@ export const sendChatMessage = async (
   message: string,
   useSearch: boolean = false,
   useMaps: boolean = false,
-  coords?: { lat: number; lng: number }
+  coords?: { lat: number; lng: number },
+  isVoiceMode: boolean = false,
+  targetLanguage: 'en-IN' | 'hi-IN' | string = 'en-IN'
 ) => {
   const ai = getAIClient();
-  
-  // Maps grounding is only supported in Gemini 2.5 series models.
-  // Use 2.5 Flash if Maps is requested, otherwise use 3 Pro for better reasoning.
-  const modelId = useMaps ? 'gemini-2.5-flash' : 'gemini-3-pro-preview';
   
   const tools: any[] = [];
   if (useSearch) tools.push({ googleSearch: {} });
   if (useMaps) tools.push({ googleMaps: {} });
 
   // Specialized System Prompt for MindSet Sentinel
-  const systemPrompt = `
+  let systemPrompt = `
 You are 'MindSet AI', a specialized mental health first-aid assistant for Indian college students.
 Tone: Empathetic, calm, and supportive. Use 'Hinglish' if the user uses it (e.g., 'I understand aap kaafi stressed feel kar rahe ho').
 Constraint: You are NOT a doctor. Do not provide medical diagnoses.
@@ -78,6 +76,23 @@ At the very end of your response, you MUST append the sentiment score of the use
 Format it exactly like this hidden tag: ||SENTIMENT:0.5||
 Do not mention this score in the text, just append the tag.
   `;
+
+  // Append voice-specific spoken instructions if in voice mode
+  if (isVoiceMode) {
+    const isHindiSelected = targetLanguage === 'hi-IN';
+    systemPrompt += `
+
+VOICE CALL MODE INSTRUCTIONS:
+- Keep responses SHORT — strictly 1 to 3 sentences per turn, like a real spoken conversation, not an essay. Long responses feel unnatural when spoken aloud and awkward to listen to.
+- Never use markdown, bullet points, asterisks, hashtags, or formatting symbols in responses — this is spoken output, symbols would be read aloud awkwardly or just look wrong if partially rendered as text on screen.
+- Use a warm, casual, friendly conversational tone — like a supportive friend, not a formal assistant. Use natural filler transitions occasionally ("hmm, I hear you", "that sounds tough", "arre, I get that") rather than clinical phrasing.
+${isHindiSelected ? `
+- MANDATORY LANGUAGE ENFORCEMENT: The user selected HINDI (हिंदी). You MUST formulate your entire response in warm, natural conversational Hindi (Devanagari script or warm Hinglish). Never respond in English.
+` : `
+- MANDATORY LANGUAGE ENFORCEMENT: The user selected ENGLISH. You MUST formulate your entire response in clear, warm, conversational English.
+`}
+`;
+  }
 
   // Note: thinkingConfig is intentionally omitted — thought-only responses
   // cause the SDK to throw "model output must contain either output text or
@@ -98,29 +113,100 @@ Do not mention this score in the text, just append the tag.
     };
   }
 
-  const chat = ai.chats.create({
-    model: modelId,
-    history: history,
-    config: config
-  });
+  console.log('================ [DIAGNOSIS: PRE-GEMINI CALL] ================');
+  console.log('1. Exact conversation history array being sent:', JSON.stringify(history, null, 2));
+  console.log('2. User message for this turn:', message);
+  console.log('3. Is voice mode:', isVoiceMode);
+  console.log('4. Target language:', targetLanguage);
+  console.log('5. Full system prompt being used for this turn:\n' + systemPrompt);
+  console.log('================================================================');
 
-  const result = await chat.sendMessage({ message });
-  
-  // Extract grounding metadata if available
-  const groundingChunks = result.candidates?.[0]?.groundingMetadata?.groundingChunks;
-  const urls: string[] = [];
-  
-  if (groundingChunks) {
-    groundingChunks.forEach((chunk: any) => {
-      if (chunk.web?.uri) urls.push(chunk.web.uri);
-      if (chunk.maps?.uri) urls.push(chunk.maps.uri); // Map links
-    });
+  if (!ai) {
+    console.warn('[sendChatMessage] Gemini AI client not available');
+  } else {
+    // Model cascade: prioritize fast, active-quota models with fallback options
+    const preferredModels = isVoiceMode
+      ? ['gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-flash-lite-latest', 'gemini-3.6-flash']
+      : (useMaps ? ['gemini-3.6-flash', 'gemini-3.5-flash'] : ['gemini-3.7-flash', 'gemini-3.5-flash', 'gemini-3.1-pro-preview']);
+
+    for (const modelId of preferredModels) {
+      try {
+        const chat = ai.chats.create({
+          model: modelId,
+          history: history,
+          config: config
+        });
+
+        const result = await chat.sendMessage({ message });
+        let rawText = extractCandidateText(result);
+
+        if (rawText) {
+          // In voice mode, strip any sentiment tags and formatting marks so speech & subtitles are clean
+          if (isVoiceMode) {
+            rawText = rawText
+              .replace(/\|\|SENTIMENT:.*?\|\|/g, '')
+              .replace(/[*_#`~]/g, '')
+              .trim();
+          }
+
+          // Extract grounding metadata if available
+          const groundingChunks = result.candidates?.[0]?.groundingMetadata?.groundingChunks;
+          const urls: string[] = [];
+          if (groundingChunks) {
+            groundingChunks.forEach((chunk: any) => {
+              if (chunk.web?.uri) urls.push(chunk.web.uri);
+              if (chunk.maps?.uri) urls.push(chunk.maps.uri);
+            });
+          }
+
+          return {
+            text: rawText,
+            urls: urls
+          };
+        }
+      } catch (modelErr: any) {
+        console.warn(`[sendChatMessage] Model ${modelId} failed:`, modelErr?.message || modelErr);
+        // Continue to the next model in the cascade
+      }
+    }
   }
 
-  return {
-    text: extractCandidateText(result),
-    urls: urls
-  };
+  // Graceful voice fallback: generate dynamic, non-repeating spoken response matching target language & intent
+  if (isVoiceMode) {
+    const isHindi = targetLanguage === 'hi-IN' || /[\u0900-\u097F]/.test(message) || /\b(hai|hoon|ho|mujhe|mera|meri|kya|nahi|karna|lag|raha|rahi|bahut|chinta|dar|shanti)\b/i.test(message);
+    const lower = message.toLowerCase();
+    const turnCount = Math.floor(history.length / 2);
+
+    let fallbackReply = '';
+    if (isHindi) {
+      if (/तकनीक|तरीका|exercise|calm|शांत|घबराहट|anxiety|panic/i.test(message)) {
+        fallbackReply = "मेरे साथ 4-7-8 सांस लेने का अभ्यास कीजिए — 4 सेकंड धीरे-धीरे सांस अंदर लें, 7 सेकंड रोकें, और 8 सेकंड में मुंह से बाहर छोड़ें। इससे आपकी धड़कन और मन तुरंत शांत होगा।";
+      } else if (/पढ़ाई|एग्ज़ाम|exam|marks|फेल|डर|नंबर|तनाव/i.test(message)) {
+        fallbackReply = "पढ़ाई का तनाव कभी-कभी बहुत भारी लगने लगता है, पर आपकी मेहनत बेकार नहीं जाएगी। थोड़ी देर किताब बंद करके पानी पीजिए और सिर्फ 5 मिनट का ब्रेक लें।";
+      } else if (turnCount > 0) {
+        fallbackReply = "मैं आपकी बात ध्यान से समझ रहा हूँ। आप बिल्कुल सही दिशा में सोच रहे हैं — थोड़ा और बताइए कि अभी आपको सबसे ज़्यादा क्या परेशान कर रहा है?";
+      } else {
+        fallbackReply = "हाँ, मैं समझ सकता हूँ कि आप परेशान महसूस कर रहे हैं। आप अकेले नहीं हैं — गहरी साँस लीजिए, हम मिलकर इसका समाधान निकालेंगे।";
+      }
+    } else {
+      if (/technique|exercise|calm|breathe|breathing|panic|anxious/i.test(lower)) {
+        fallbackReply = "Try taking a slow 4-7-8 breath with me right now: breathe in through your nose for 4 counts, hold for 7, and exhale gently for 8. Let your shoulders drop as you breathe out.";
+      } else if (/exam|study|grades|fail|test|college|pressure/i.test(lower)) {
+        fallbackReply = "Academic pressure can feel incredibly heavy, but remember that your worth is not defined by a single exam. Let's take a 5-minute pause and reset.";
+      } else if (turnCount > 0) {
+        fallbackReply = "I'm listening closely, and I'm right here with you. Tell me a bit more about what's feeling hardest right now.";
+      } else {
+        fallbackReply = "Hmm, I hear you, and it's completely okay to feel overwhelmed right now. Take a gentle breath, and we will take this step by step together.";
+      }
+    }
+
+    return {
+      text: fallbackReply,
+      urls: []
+    };
+  }
+
+  throw new Error("No response generated from AI models");
 };
 
 // 2. Image Generation
@@ -191,28 +277,12 @@ export const generateRelaxationVideo = async (prompt: string) => {
   }
 };
 
-// 4. TTS for accessibility
+// 4. TTS for accessibility & voice (3-tier fallback: ElevenLabs -> OpenAI -> Offline)
 export const speakText = async (text: string) => {
-  const ai = getAIClient();
-  const model = "gemini-2.5-flash-preview-tts";
-  
-  const response = await ai.models.generateContent({
-    model,
-    contents: [{ parts: [{ text }] }],
-    config: {
-      responseModalities: ["AUDIO" as any],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName: 'Kore' },
-        },
-      },
-    },
-  });
-
-  const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-  if (!base64Audio) throw new Error("TTS failed");
-  
-  return base64Audio;
+  const { synthesizeAndPlay } = await import('./ttsService');
+  const result = await synthesizeAndPlay(text);
+  await result.audioPromise;
+  return result;
 };
 
 // 5. Audio Decoding Helper (for Live API)
