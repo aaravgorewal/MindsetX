@@ -2,6 +2,7 @@
 import React from 'react';
 import { Home, MessageCircle, Activity, ShieldCheck, Palette, X, LogOut, Settings, HelpCircle, Brain, User } from 'lucide-react';
 import { Screen } from '../types';
+import { useAuth } from '../context/AuthContext';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentScreen, onNavigate }) => {
+  const { signOut } = useAuth();
   const navItems = [
     { id: Screen.HOME, icon: Home, label: 'Feed' },
     { id: Screen.PROFILE, icon: User, label: 'My Dashboard' },
@@ -24,7 +26,18 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentScreen, onNav
   const bottomItems = [
     { icon: Settings, label: 'Settings', action: () => onNavigate(Screen.SETTINGS) },
     { icon: HelpCircle, label: 'Help', action: () => {} },
-    { icon: LogOut, label: 'Logout', className: 'text-red-400 hover:text-red-300', action: () => {} },
+    { 
+      icon: LogOut, 
+      label: 'Sign Out', 
+      className: 'text-red-400 hover:text-red-300 hover:bg-red-500/10 cursor-pointer', 
+      action: async () => {
+        try {
+          await signOut();
+        } catch (err) {
+          console.error('Sign out error:', err);
+        }
+      } 
+    },
   ];
 
   const sidebarClasses = `

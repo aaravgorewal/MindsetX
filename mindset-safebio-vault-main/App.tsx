@@ -10,10 +10,14 @@ import SettingsScreen from './components/SettingsScreen';
 import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Footer from './components/Footer';
+import Login from './components/Login';
+import Dashboard from './components/Dashboard';
 import { Screen } from './types';
+import { useAuth } from './context/AuthContext';
 import { Lock, ScanFace, Fingerprint, ChevronRight } from 'lucide-react';
 
 const App: React.FC = () => {
+  const { user, loading } = useAuth();
   const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.HOME);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isAppLocked, setIsAppLocked] = useState(true);
@@ -77,12 +81,29 @@ const App: React.FC = () => {
         return <LiveSession onEnd={() => setCurrentScreen(Screen.HOME)} />;
       case Screen.SETTINGS:
         return <SettingsScreen onBack={() => setCurrentScreen(Screen.HOME)} />;
+      case Screen.PROFILE:
+        return <Dashboard onNavigate={setCurrentScreen} />;
       default:
         return <MindSetFeed />;
     }
   };
 
-  // --- APP LOCK SCREEN ---
+  // --- 1. AUTH LOADING SPINNER ---
+  if (loading) {
+      return (
+          <div className="fixed inset-0 z-[100] bg-charcoal flex flex-col items-center justify-center p-8 text-white">
+              <div className="w-12 h-12 border-4 border-teal-500/20 border-t-teal-400 rounded-full animate-spin mb-4"></div>
+              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Loading MindSet X...</p>
+          </div>
+      );
+  }
+
+  // --- 2. UNAUTHENTICATED STATE: GOOGLE LOGIN ---
+  if (!user) {
+      return <Login />;
+  }
+
+  // --- 3. SECONDARY APP LOCK SCREEN (PIN/BIO/FACE) ---
   if (isAppLocked) {
       return (
           <div className="fixed inset-0 z-[100] bg-charcoal flex flex-col items-center justify-center p-8 text-white">
@@ -163,7 +184,12 @@ const App: React.FC = () => {
       <div className="flex-1 flex flex-col min-w-0 h-full relative z-10">
         
         {/* Dashboard Header */}
-        <Header onMenuClick={() => setSidebarOpen(true)} />
+        <Header 
+          onMenuClick={() => setSidebarOpen(true)} 
+          onProfileClick={() => setCurrentScreen(Screen.PROFILE)}
+          userName={user.displayName || user.email?.split('@')[0]}
+          userAvatar={user.photoURL}
+        />
 
         {/* Scrollable Main View */}
         <main className={`flex-1 overflow-y-auto overflow-x-hidden scroll-smooth relative ${

@@ -97,6 +97,10 @@ app.add_middleware(
     max_age=3600,
 )
 
+# User Profile routes (protected via Firebase Auth)
+from user_routes import router as user_router
+app.include_router(user_router)
+
 # ── MAS Orchestrator (lazy singleton, shares Qdrant client) ──────────────────
 _mas: Optional[MASOrchestrator] = None
 

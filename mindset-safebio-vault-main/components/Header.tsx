@@ -5,10 +5,11 @@ import { Menu, Bell, Search, User } from 'lucide-react';
 interface HeaderProps {
   onMenuClick: () => void;
   onProfileClick?: () => void;
-  userAvatar?: string;
+  userName?: string | null;
+  userAvatar?: string | null;
 }
 
-const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileClick, userAvatar }) => {
+const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileClick, userName, userAvatar }) => {
   return (
     <header className="h-16 flex-none bg-charcoal/80 backdrop-blur-md border-b border-white/10 flex items-center justify-between px-4 md:px-8 z-50 sticky top-0 shadow-sm">
       <div className="flex items-center gap-4">
@@ -38,7 +39,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileClick, userAvatar
         
         <div className="flex items-center gap-3 pl-4 border-l border-white/10">
           <div className="text-right hidden md:block">
-            <div className="text-sm font-bold text-white">QuietStorm_99</div>
+            <div className="text-sm font-bold text-white truncate max-w-[180px]">{userName || "QuietStorm_99"}</div>
             <div className="text-xs text-gray-400">Student • Pro Member</div>
           </div>
           <div 
@@ -48,8 +49,9 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onProfileClick, userAvatar
              <div className="w-full h-full rounded-full bg-charcoal flex items-center justify-center overflow-hidden">
                  <img 
                     src={userAvatar || "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"} 
-                    alt="Profile" 
+                    alt={userName || "Profile"} 
                     className="w-full h-full object-cover" 
+                    referrerPolicy="no-referrer"
                  />
              </div>
           </div>

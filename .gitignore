@@ -23,6 +23,8 @@ ENV/
 .env
 .env.local
 .env.*.local
+firebase-service-account.json
+*firebase-service-account*.json
 
 # Qdrant local data (use Qdrant Cloud instead)
 qdrant_data/
@@ -80,3 +82,4 @@ htmlcov/
 # Temporary
 *.tmp
 *.temp
+

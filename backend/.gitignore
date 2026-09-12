@@ -1,0 +1,8 @@
+# Firebase Service Account Credentials (never commit)
+firebase-service-account.json
+*firebase-service-account*.json
+.env
+__pycache__/
+*.py[cod]
+venv/
+.venv/

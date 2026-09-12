@@ -113,3 +113,14 @@ export interface AgenticWorkflowResult {
   provider: 'gemini' | 'openai' | 'offline-agent';
   timestamp: string;
 }
+
+// --- USER PROFILE TYPES ---
+export interface UserProfile {
+  uid: string;
+  displayName: string | null;
+  email: string | null;
+  photoURL: string | null;
+  createdAt?: any;
+  onboardingComplete: boolean;
+  preferredLanguage: string;
+}
