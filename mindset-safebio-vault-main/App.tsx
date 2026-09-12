@@ -69,7 +69,7 @@ const App: React.FC = () => {
   const renderScreen = () => {
     switch (currentScreen) {
       case Screen.HOME:
-        return <MindSetFeed />;
+        return <MindSetFeed onNavigate={setCurrentScreen} />;
       case Screen.CHAT:
         return <ChatInterface />;
       case Screen.VAULT:
@@ -85,7 +85,7 @@ const App: React.FC = () => {
       case Screen.PROFILE:
         return <Dashboard onNavigate={setCurrentScreen} pendingConsentCount={pendingConsentCount} />;
       default:
-        return <MindSetFeed />;
+        return <MindSetFeed onNavigate={setCurrentScreen} />;
     }
   };
 
