@@ -2,6 +2,8 @@
 import React, { useEffect, useState } from 'react';
 import { Battery, Zap, Play, Heart, Bell, X, Loader2, Brain, Leaf, Wind, ChevronRight, Video, FileText, Image as ImageIcon } from 'lucide-react';
 import { generateCatchyNudge, generateHealthLesson, generateHealingImage, generateRelaxationVideo } from '../services/geminiService';
+import { useAuth } from '../context/AuthContext';
+import { logUserMood } from '../services/userService';
 
 interface HealthModule {
     topic: string;
@@ -13,6 +15,7 @@ interface HealthModule {
 }
 
 const MindSetFeed: React.FC = () => {
+  const { user } = useAuth();
   const [nudge, setNudge] = useState<string | null>(null);
   const [showNudge, setShowNudge] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -73,6 +76,13 @@ const MindSetFeed: React.FC = () => {
     setIsGenerating(true);
     // Hide current nudge briefly to show transition
     setShowNudge(false);
+
+    // Persist mood log to Firestore (users/{uid}/moodLog/{date})
+    if (user?.uid) {
+      logUserMood(user.uid, level).catch((err) => {
+        console.error('Failed to log mood to Firestore:', err);
+      });
+    }
 
     let context = 'normal';
     switch (level) {

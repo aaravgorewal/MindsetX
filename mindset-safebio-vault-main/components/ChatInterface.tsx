@@ -4,6 +4,8 @@ import { Send, MapPin, Search, Mic, StopCircle, Volume2, Phone, ClipboardList, A
 import { sendChatMessage, speakText } from '../services/geminiService';
 import { apiService } from '../services/apiService';
 import { ChatMessage, AssessmentState, MessageOption } from '../types';
+import { useAuth } from '../context/AuthContext';
+import { updateUserProfile } from '../services/userService';
 
 const PHQ9_QUESTIONS = [
   "Little interest or pleasure in doing things?",
@@ -25,6 +27,7 @@ const PHQ9_OPTIONS: MessageOption[] = [
 ];
 
 const ChatInterface: React.FC = () => {
+  const { user } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: '1', role: 'model', text: "Namaste! I'm MindSet AI. I'm here to listen without judgment. How are you feeling today? (Stress, exams, or just life?)\n\nYou can also type 'Start Assessment' to take a quick mental health check.", sentimentScore: 0.1 }
   ]);
@@ -86,6 +89,18 @@ const ChatInterface: React.FC = () => {
         { label: "No, later", value: "cancel" }
     ]);
   };
+
+  // Check if routed with intent to start assessment immediately
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('start_assessment_flow') === 'true') {
+        sessionStorage.removeItem('start_assessment_flow');
+        startAssessment();
+      }
+    } catch (e) {
+      console.error('Failed to read start_assessment_flow flag:', e);
+    }
+  }, []);
 
   const processAssessmentAnswer = (value: number | string) => {
       // Handle Intro
@@ -150,6 +165,13 @@ const ChatInterface: React.FC = () => {
           localStorage.setItem('last_phq_score', totalScore.toString());
           localStorage.setItem('phq_drift_state', driftState);
           localStorage.setItem('phq_severity', severity);
+
+          // Update onboardingComplete: true on user's Firestore profile
+          if (user?.uid) {
+              updateUserProfile(user.uid, { onboardingComplete: true }).catch((err) => {
+                  console.error('Failed to update onboardingComplete in Firestore:', err);
+              });
+          }
       } catch (error: any) {
           console.error("PHQ-9 submission error:", error);
           setAssessment({ active: false, currentStep: -1, scores: [] });

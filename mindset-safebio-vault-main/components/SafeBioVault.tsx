@@ -5,6 +5,8 @@ import { DocumentItem, ChatMessage, AgenticStep, AgenticWorkflowResult } from '.
 import { apiService } from '../services/apiService';
 import { analyzeSDoH, runAgenticWorkflow, simulateDigitalTwin, extractDrugNameFromImage, runFederatedLearning, generateZKP, parseToFHIR } from '../services/geminiService';
 import { parseVcfFile, VcfParseResult } from '../services/vcfParser';
+import { useAuth } from '../context/AuthContext';
+import { saveSDoHResult } from '../services/userService';
 
 // --- SUB-COMPONENTS DEFINED OUTSIDE TO PREVENT RE-RENDER ISSUES ---
 
@@ -141,7 +143,24 @@ const FEDERATED_NODES = [
   },
 ];
 
-const SafeBioVault: React.FC = () => {
+interface SafeBioVaultProps {
+  onPendingRequestsChange?: (count: number) => void;
+}
+
+const DEFAULT_MOCK_ACCESS_REQUESTS: AccessRequest[] = [
+  {
+    id: 'req-001',
+    doctorName: 'Dr. Priya Desai',
+    hprId: 'HPR-9921-221',
+    hospital: 'Apollo Cardiac Center',
+    reason: 'Review Heart Health & Genomic Risk for Prescribing Beta-Blockers',
+    duration: '2 Hours',
+    requestedAt: 'Just Now'
+  }
+];
+
+const SafeBioVault: React.FC<SafeBioVaultProps> = ({ onPendingRequestsChange }) => {
+  const { user } = useAuth();
   // Vault State
   const [isLocked, setIsLocked] = useState(true);
   const [setupMode, setSetupMode] = useState(false);
@@ -169,7 +188,7 @@ const SafeBioVault: React.FC = () => {
   const [processStep, setProcessStep] = useState(0); 
 
   // Doctor Access & Consent State
-  const [accessRequests, setAccessRequests] = useState<AccessRequest[]>([]);
+  const [accessRequests, setAccessRequests] = useState<AccessRequest[]>(DEFAULT_MOCK_ACCESS_REQUESTS);
   const [activeGrants, setActiveGrants] = useState<ActiveGrant[]>([]);
   const [mintingConsent, setMintingConsent] = useState<string | null>(null); // Request ID being processed
 
@@ -244,6 +263,14 @@ const SafeBioVault: React.FC = () => {
   const genomicDocs = documents.filter(doc => doc.type === 'DNA');
 
   useEffect(() => {
+      try {
+          const initialView = sessionStorage.getItem('vault_initial_view');
+          if (initialView) {
+              sessionStorage.removeItem('vault_initial_view');
+              setVaultView(initialView as any);
+          }
+      } catch (e) {}
+
       const isSetup = localStorage.getItem('vault_setup_complete');
       const savedPin = localStorage.getItem('vault_pin');
       
@@ -354,7 +381,11 @@ const SafeBioVault: React.FC = () => {
       setTimeout(() => {
           setMintingConsent(null);
           // Remove from requests
-          setAccessRequests(prev => prev.filter(r => r.id !== req.id));
+          setAccessRequests(prev => {
+            const updated = prev.filter(r => r.id !== req.id);
+            onPendingRequestsChange?.(updated.length);
+            return updated;
+          });
           // Add to grants
           const newGrant: ActiveGrant = {
               id: req.id,
@@ -377,7 +408,11 @@ const SafeBioVault: React.FC = () => {
   };
 
   const handleDenyRequest = (id: string) => {
-      setAccessRequests(prev => prev.filter(r => r.id !== id));
+      setAccessRequests(prev => {
+        const updated = prev.filter(r => r.id !== id);
+        onPendingRequestsChange?.(updated.length);
+        return updated;
+      });
   };
 
   const handleRevokeGrant = (grant: ActiveGrant) => {
@@ -503,6 +538,26 @@ const SafeBioVault: React.FC = () => {
 
           setSdohMessages(prev => [...prev, botMsg]);
 
+          // Extract Holistic Risk Score and persist to Firestore
+          try {
+              const rawText = response?.text || '';
+              const scoreMatch = rawText.match(/Holistic Risk Score\*{0,2}:\s*\*{0,2}(\d{1,3})\s*\/\s*100/i);
+              if (scoreMatch && scoreMatch[1] && user?.uid) {
+                  const scoreNum = parseInt(scoreMatch[1], 10);
+                  if (!isNaN(scoreNum) && scoreNum >= 0 && scoreNum <= 100) {
+                      const summary = rawText.slice(0, 150).trim();
+                      saveSDoHResult(user.uid, {
+                          riskScore: scoreNum,
+                          summary,
+                          groundingUrls: response?.urls || [],
+                      }).catch((saveErr) => {
+                          console.error("Failed to persist SDoH result to Firestore:", saveErr);
+                      });
+                  }
+              }
+          } catch (parseErr) {
+              console.warn("Skipping SDoH persistence (score parse failed):", parseErr);
+          }
       } catch (e) {
           console.error(e);
           setSdohMessages(prev => [...prev, {

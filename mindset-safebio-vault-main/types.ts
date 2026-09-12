@@ -124,3 +124,28 @@ export interface UserProfile {
   onboardingComplete: boolean;
   preferredLanguage: string;
 }
+
+export interface MoodLogEntry {
+  date: string; // YYYY-MM-DD
+  moodScore: number; // 1 - 5
+  updatedAt?: any;
+}
+
+export interface SDoHHistoryEntry {
+  id?: string;
+  riskScore: number;
+  summary: string;
+  groundingUrls: string[];
+  createdAt?: any;
+}
+
+export interface BookingEntry {
+  id?: string;
+  specialistName: string;
+  specialistRole: string;
+  dateTime: string;
+  status: 'upcoming' | 'completed' | 'cancelled';
+  createdAt?: any;
+}
+
+

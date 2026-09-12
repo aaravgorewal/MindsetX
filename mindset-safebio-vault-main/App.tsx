@@ -21,6 +21,7 @@ const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.HOME);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isAppLocked, setIsAppLocked] = useState(true);
+  const [pendingConsentCount, setPendingConsentCount] = useState<number>(1);
   
   // App Lock State
   const [authMethod, setAuthMethod] = useState<'FACE'|'BIO'|'PIN'>('FACE');
@@ -72,7 +73,7 @@ const App: React.FC = () => {
       case Screen.CHAT:
         return <ChatInterface />;
       case Screen.VAULT:
-        return <SafeBioVault />;
+        return <SafeBioVault onPendingRequestsChange={setPendingConsentCount} />;
       case Screen.STUDIO:
         return <Studio />;
       case Screen.SENTINEL:
@@ -82,7 +83,7 @@ const App: React.FC = () => {
       case Screen.SETTINGS:
         return <SettingsScreen onBack={() => setCurrentScreen(Screen.HOME)} />;
       case Screen.PROFILE:
-        return <Dashboard onNavigate={setCurrentScreen} />;
+        return <Dashboard onNavigate={setCurrentScreen} pendingConsentCount={pendingConsentCount} />;
       default:
         return <MindSetFeed />;
     }

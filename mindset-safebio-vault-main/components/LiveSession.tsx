@@ -3,6 +3,8 @@ import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { Mic, MicOff, PhoneOff, Video, Star, ChevronLeft, CheckCircle, Brain, X, Calendar as CalendarIcon, ExternalLink, RefreshCw, User, Briefcase, QrCode, ShieldCheck } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { GoogleGenAI, LiveServerMessage } from '@google/genai';
+import { useAuth } from '../context/AuthContext';
+import { saveUserBooking } from '../services/userService';
 
 interface LiveSessionProps {
   onEnd: () => void;
@@ -258,6 +260,7 @@ const GeminiLiveSession = ({ onEnd }: { onEnd: () => void }) => {
 
 // --- MAIN COMPONENT: DIRECTORY & BOOKING ---
 export default function LiveSession({ onEnd }: LiveSessionProps) {
+  const { user } = useAuth();
   const [view, setView] = useState<'DIRECTORY' | 'AI_SESSION' | 'SCHEDULE'>('DIRECTORY');
   const [selectedSpecialist, setSelectedSpecialist] = useState<Specialist | null>(null);
   const [bookingStep, setBookingStep] = useState<'NONE' | 'DATE' | 'PAYMENT' | 'CONFIRM'>('NONE');
@@ -347,7 +350,7 @@ export default function LiveSession({ onEnd }: LiveSessionProps) {
     setPaymentConfirmed(false);
   };
 
-  const finalizeBooking = () => {
+  const finalizeBooking = async () => {
     setBookingStep('CONFIRM');
     if (selectedSpecialist) {
         const dateLabel = formatBookingDateFull(selectedBookingDate);
@@ -361,6 +364,32 @@ export default function LiveSession({ onEnd }: LiveSessionProps) {
             meetLink: 'https://meet.google.com/abc-def-ghi'
         };
         setCalendarEvents(prev => [...prev, newEvent]);
+
+        // Construct ISO string for the booking dateTime
+        let combinedDate = new Date(selectedBookingDate);
+        const match = selectedTimeSlot.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (match) {
+          let hours = parseInt(match[1], 10);
+          const mins = parseInt(match[2], 10);
+          const ampm = match[3].toUpperCase();
+          if (ampm === 'PM' && hours !== 12) hours += 12;
+          if (ampm === 'AM' && hours === 12) hours = 0;
+          combinedDate.setHours(hours, mins, 0, 0);
+        }
+        const dateTimeIso = combinedDate.toISOString();
+
+        if (user?.uid) {
+          try {
+            await saveUserBooking(user.uid, {
+              specialistName: selectedSpecialist.name,
+              specialistRole: selectedSpecialist.role,
+              dateTime: dateTimeIso,
+              status: 'upcoming',
+            });
+          } catch (err) {
+            console.error('Failed to persist booking to Firestore:', err);
+          }
+        }
     }
   };
 
