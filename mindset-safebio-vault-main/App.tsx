@@ -13,6 +13,7 @@ import Footer from './components/Footer';
 import Login from './components/Login';
 import Landing from './components/Landing';
 import Dashboard from './components/Dashboard';
+import WelcomeTransition from './components/WelcomeTransition';
 import ErrorBoundary from './components/ErrorBoundary';
 import { Screen } from './types';
 import { useAuth } from './context/AuthContext';
@@ -22,9 +23,32 @@ const App: React.FC = () => {
   const { user, loading } = useAuth();
   const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.HOME);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
-  const [isAppLocked, setIsAppLocked] = useState(true);
+  const [isAppLocked, setIsAppLocked] = useState(false);
   const [pendingConsentCount, setPendingConsentCount] = useState<number>(1);
   const [hasStartedOnboarding, setHasStartedOnboarding] = useState(false);
+  const [showWelcome, setShowWelcome] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && sessionStorage.getItem('just_logged_in') === 'true';
+  });
+
+  // Listen for active login transitions (unauthenticated -> authenticated)
+  const prevUserRef = React.useRef<typeof user>(user);
+  useEffect(() => {
+    if (!prevUserRef.current && user) {
+      if (typeof window !== 'undefined' && sessionStorage.getItem('just_logged_in') === 'true') {
+        setShowWelcome(true);
+        setIsAppLocked(false);
+      }
+    }
+    prevUserRef.current = user;
+  }, [user]);
+
+  const handleWelcomeComplete = () => {
+    setShowWelcome(false);
+    setIsAppLocked(false);
+    try {
+      sessionStorage.removeItem('just_logged_in');
+    } catch (e) {}
+  };
   
   // App Lock State
   const [authMethod, setAuthMethod] = useState<'FACE'|'BIO'|'PIN'>('FACE');
@@ -107,10 +131,28 @@ const App: React.FC = () => {
       if (!hasStartedOnboarding) {
           return <Landing onGetStarted={() => setHasStartedOnboarding(true)} />;
       }
-      return <Login onBack={() => setHasStartedOnboarding(false)} />;
+      return (
+        <Login 
+          onBack={() => setHasStartedOnboarding(false)} 
+          onLoginSuccess={() => {
+            setShowWelcome(true);
+            setIsAppLocked(false);
+          }}
+        />
+      );
   }
 
-  // --- 3. SECONDARY APP LOCK SCREEN (PIN/BIO/FACE) ---
+  // --- 3. WELCOME ONBOARDING TRANSITION (FRESH GOOGLE LOGIN ONLY) ---
+  if (showWelcome) {
+      return (
+        <WelcomeTransition 
+          user={user} 
+          onComplete={handleWelcomeComplete} 
+        />
+      );
+  }
+
+  // --- 4. SECONDARY APP LOCK SCREEN (PIN/BIO/FACE) ---
   if (isAppLocked) {
       return (
           <div className="fixed inset-0 z-[100] bg-charcoal flex flex-col items-center justify-center p-8 text-white">

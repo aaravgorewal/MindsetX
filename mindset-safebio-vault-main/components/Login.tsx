@@ -4,9 +4,10 @@ import { Shield, Sparkles, AlertCircle, ChevronLeft } from 'lucide-react';
 
 interface LoginProps {
   onBack?: () => void;
+  onLoginSuccess?: () => void;
 }
 
-const Login: React.FC<LoginProps> = ({ onBack }) => {
+const Login: React.FC<LoginProps> = ({ onBack, onLoginSuccess }) => {
   const { signIn } = useAuth();
   const [error, setError] = useState<string>('');
   const [isSigningIn, setIsSigningIn] = useState<boolean>(false);
@@ -15,8 +16,19 @@ const Login: React.FC<LoginProps> = ({ onBack }) => {
     try {
       setError('');
       setIsSigningIn(true);
-      await signIn();
+      try {
+        sessionStorage.setItem('just_logged_in', 'true');
+      } catch (e) {}
+      if (typeof window !== 'undefined' && (window as any).__customSignIn) {
+        await (window as any).__customSignIn();
+      } else {
+        await signIn();
+      }
+      onLoginSuccess?.();
     } catch (err: any) {
+      try {
+        sessionStorage.removeItem('just_logged_in');
+      } catch (e) {}
       console.error('Google Sign-In Error:', err);
       if (err?.code === 'auth/popup-closed-by-user') {
         setError('Sign-in cancelled. Please try again.');

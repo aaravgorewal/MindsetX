@@ -17,8 +17,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      (window as any).__setUser = (u: any) => {
+        setUser(u);
+        setLoading(false);
+      };
+    }
+
     if (typeof window !== 'undefined' && localStorage.getItem('test_mock_user')) {
-      setUser({ uid: 'test-demo-user', email: 'test@mindsetx.in', displayName: 'Test Student' } as any);
+      const raw = localStorage.getItem('test_mock_user');
+      try {
+        const parsed = JSON.parse(raw || '{}');
+        setUser({ uid: parsed.uid || 'test-demo-user', email: parsed.email || 'test@mindsetx.in', displayName: parsed.displayName || 'Test Student', photoURL: parsed.photoURL } as any);
+      } catch (e) {
+        setUser({ uid: 'test-demo-user', email: 'test@mindsetx.in', displayName: 'Test Student' } as any);
+      }
       setLoading(false);
       return;
     }
