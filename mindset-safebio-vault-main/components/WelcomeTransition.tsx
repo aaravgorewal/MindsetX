@@ -74,7 +74,7 @@ export const WelcomeTransition: React.FC<WelcomeTransitionProps> = ({
       setProgress(100);
     }, 2200);
 
-    // Stage 4: Automatic transition to dashboard (at durationMs)
+
     const t4 = setTimeout(() => {
       handleFinish();
     }, durationMs);
