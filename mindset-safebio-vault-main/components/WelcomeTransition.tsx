@@ -42,7 +42,7 @@ export const WelcomeTransition: React.FC<WelcomeTransitionProps> = ({
     }, 320);
   };
 
-  // Keyboard navigation listener (Esc, Space, Enter)
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
@@ -94,8 +94,8 @@ export const WelcomeTransition: React.FC<WelcomeTransitionProps> = ({
       tabIndex={0}
       aria-label="Welcome to MindSet X - Tap anywhere to skip to dashboard"
       className={`fixed inset-0 z-[200] bg-[#0A0D12] flex flex-col items-center justify-center p-6 text-white select-none cursor-pointer overflow-hidden transition-all duration-300 ease-out ${isExiting
-          ? 'opacity-0 scale-[1.03] blur-sm pointer-events-none'
-          : 'opacity-100 scale-100'
+        ? 'opacity-0 scale-[1.03] blur-sm pointer-events-none'
+        : 'opacity-100 scale-100'
         }`}
     >
       {/* 1. Ambient Background Glows */}
