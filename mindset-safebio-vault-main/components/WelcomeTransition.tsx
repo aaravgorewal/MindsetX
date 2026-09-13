@@ -62,7 +62,7 @@ export const WelcomeTransition: React.FC<WelcomeTransitionProps> = ({
       setProgress(40);
     }, 500);
 
-    // Stage 2: Personalized greeting & biometric synchronization (800 - 1800ms)
+
     const t2 = setTimeout(() => {
       setPhase(2);
       setProgress(75);
