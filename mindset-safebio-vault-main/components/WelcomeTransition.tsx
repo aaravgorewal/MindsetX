@@ -56,7 +56,7 @@ export const WelcomeTransition: React.FC<WelcomeTransitionProps> = ({
 
 
   useEffect(() => {
-    // Stage 1: Brand logo & identity reveal (0 - 800ms)
+
     const t1 = setTimeout(() => {
       setPhase(1);
       setProgress(40);
