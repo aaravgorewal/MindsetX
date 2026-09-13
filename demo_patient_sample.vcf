@@ -1,0 +1,20 @@
+##fileformat=VCFv4.2
+##fileDate=20260912
+##source=MindSetXDemoPanel
+##reference=GRCh38
+##INFO=<ID=NS,Number=1,Type=Integer,Description="Number of Samples With Data">
+##INFO=<ID=DP,Number=1,Type=Integer,Description="Total Depth">
+##INFO=<ID=AF,Number=A,Type=Float,Description="Allele Frequency">
+##INFO=<ID=GENE,Number=1,Type=String,Description="Associated Gene">
+##INFO=<ID=STAR,Number=1,Type=String,Description="Star Allele Nomenclature">
+##INFO=<ID=CLNSIG,Number=1,Type=String,Description="Clinical Significance">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+chr1	97078987	rs1799853	C	T	88	PASS	NS=1;DP=42;AF=0.5;GENE=CYP2C9;STAR=*2;CLNSIG=Drug_Response
+chr1	97081570	rs1057910	A	C	95	PASS	NS=1;DP=48;AF=0.5;GENE=CYP2C9;STAR=*3;CLNSIG=Drug_Response
+chr9	133257521	rs5030655	T	A	91	PASS	NS=1;DP=58;AF=0.5;GENE=ABO;CLNSIG=Benign
+chr10	94781859	rs4244285	G	A	99	PASS	NS=1;DP=64;AF=0.5;GENE=CYP2C19;STAR=*2;CLNSIG=Loss_of_function
+chr10	94842866	rs28399504	A	G	76	PASS	NS=1;DP=39;AF=0.5;GENE=CYP2C19;STAR=*17;CLNSIG=Increased_function
+chr16	31098310	rs1801133	G	A	40	LowQual	NS=1;DP=15;AF=0.5;GENE=MTHFR;CLNSIG=Uncertain_significance
+chr19	38499645	rs3892097	C	T	99	PASS	NS=1;DP=61;AF=0.5;GENE=CYP2D6;STAR=*4;CLNSIG=Non_functional
+chr19	38470286	rs1065852	C	T	84	PASS	NS=1;DP=50;AF=0.5;GENE=CYP2D6;STAR=*10;CLNSIG=Reduced_activity
+chr22	42126611	rs16947	G	A	67	PASS	NS=1;DP=45;AF=0.5;GENE=CYP2D6;STAR=*2;CLNSIG=Normal_function
