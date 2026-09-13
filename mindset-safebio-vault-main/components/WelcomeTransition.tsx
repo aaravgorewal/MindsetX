@@ -68,7 +68,7 @@ export const WelcomeTransition: React.FC<WelcomeTransitionProps> = ({
       setProgress(75);
     }, 1300);
 
-    // Stage 3: Ready state & final polish (1800 - 2700ms)
+
     const t3 = setTimeout(() => {
       setPhase(3);
       setProgress(100);
