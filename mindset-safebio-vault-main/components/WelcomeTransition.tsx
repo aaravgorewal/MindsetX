@@ -54,7 +54,7 @@ export const WelcomeTransition: React.FC<WelcomeTransitionProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Multi-stage timed animation pipeline
+
   useEffect(() => {
     // Stage 1: Brand logo & identity reveal (0 - 800ms)
     const t1 = setTimeout(() => {
