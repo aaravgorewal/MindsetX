@@ -5,10 +5,7 @@ import { Shield, Sparkles, ChevronRight, Lock, Activity } from 'lucide-react';
 interface WelcomeTransitionProps {
   user: User;
   onComplete: () => void;
-  /**
-   * Total duration in milliseconds before automatically completing.
-   * Default is 3000ms (3 seconds).
-   */
+
   durationMs?: number;
 }
 
@@ -28,12 +25,12 @@ export const WelcomeTransition: React.FC<WelcomeTransitionProps> = ({
   const firstName = rawDisplayName ? rawDisplayName.split(' ')[0] : (user.email ? user.email.split('@')[0] : 'Friend');
   const userInitials = rawDisplayName
     ? rawDisplayName
-        .split(' ')
-        .filter(Boolean)
-        .map(n => n[0])
-        .slice(0, 2)
-        .join('')
-        .toUpperCase()
+      .split(' ')
+      .filter(Boolean)
+      .map(n => n[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase()
     : firstName.slice(0, 2).toUpperCase();
 
   const handleFinish = () => {
@@ -96,11 +93,10 @@ export const WelcomeTransition: React.FC<WelcomeTransitionProps> = ({
       role="button"
       tabIndex={0}
       aria-label="Welcome to MindSet X - Tap anywhere to skip to dashboard"
-      className={`fixed inset-0 z-[200] bg-[#0A0D12] flex flex-col items-center justify-center p-6 text-white select-none cursor-pointer overflow-hidden transition-all duration-300 ease-out ${
-        isExiting
+      className={`fixed inset-0 z-[200] bg-[#0A0D12] flex flex-col items-center justify-center p-6 text-white select-none cursor-pointer overflow-hidden transition-all duration-300 ease-out ${isExiting
           ? 'opacity-0 scale-[1.03] blur-sm pointer-events-none'
           : 'opacity-100 scale-100'
-      }`}
+        }`}
     >
       {/* 1. Ambient Background Glows */}
       <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
@@ -123,7 +119,7 @@ export const WelcomeTransition: React.FC<WelcomeTransitionProps> = ({
 
       {/* 3. Main Center Welcome Card */}
       <div className="relative z-10 w-full max-w-md flex flex-col items-center text-center space-y-6">
-        
+
         {/* Brand Shield & User Avatar Ring */}
         <div className="relative flex items-center justify-center">
           {/* Pulsing outer aura ring */}
