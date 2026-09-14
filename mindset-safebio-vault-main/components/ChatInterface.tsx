@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, MapPin, Search, Mic, StopCircle, Volume2, Phone, ClipboardList, AlertOctagon, Activity } from 'lucide-react';
 import { sendChatMessage, speakText } from '../services/geminiService';
+import { detectCrisis } from '../utils/crisisDetection';
 import { apiService } from '../services/apiService';
 import { ChatMessage, AssessmentState, MessageOption } from '../types';
 import { useAuth } from '../context/AuthContext';
@@ -67,10 +68,8 @@ const ChatInterface: React.FC = () => {
   }, []);
 
   const checkForCrisis = (text: string) => {
-    const crisisKeywords = ['suicide', 'kill myself', 'end it all', 'die', 'mar jaunga', 'khatam karna', 'hopeless', 'no way out'];
-    const lowerText = text.toLowerCase();
-    if (crisisKeywords.some(keyword => lowerText.includes(keyword))) {
-        triggerCrisisMode();
+    if (detectCrisis(text)) {
+      triggerCrisisMode();
     }
   };
 
@@ -118,10 +117,12 @@ const ChatInterface: React.FC = () => {
       const score = typeof value === 'number' ? value : 0;
       const currentQIndex = assessment.currentStep;
 
+      // Item 9 independent trigger: Any positive score on suicidal ideation must immediately escalate
       if (currentQIndex === 8 && score > 0) {
           triggerCrisisMode();
-          addBotMessage("I'm concerned about your safety. Please reach out for help immediately. I've activated the emergency resources below.", [
-              { label: "Get Help Now (Call 14416)", value: "call_help", action: "tel:14416" }
+          addBotMessage("Please reach out now — Tele-MANAS: 14416 or KIRAN: 1800-599-0019, both free and available 24/7.", [
+              { label: "Call Tele-MANAS (14416)", value: "call_telemanas", action: "tel:14416" },
+              { label: "Call KIRAN (1800-599-0019)", value: "call_kiran", action: "tel:18005990019" }
           ]);
           return;
       }
@@ -146,17 +147,28 @@ const ChatInterface: React.FC = () => {
           });
 
           const { data } = response;
-          const totalScore = data.totalScore || scores.reduce((a, b) => a + b, 0);
+          const totalScore = data.totalScore ?? data.total_score ?? scores.reduce((a, b) => a + b, 0);
           const severity = data.severity || "Unknown";
-          const driftState = data.driftState || "stable";
-          const recommendation = data.recommendation || "Take care of yourself.";
+          const driftState = data.driftState ?? data.drift_state ?? "stable";
+          const recommendation = data.recommendation || (data.recommendations && data.recommendations[0]) || "Take care of yourself.";
+          const actions = data.actions || [];
+
+          // Connect backend emergency signal to frontend crisis banner (Defense-in-Depth)
+          const hasEmergencyAction = actions.some((act: any) => act.type && act.type.toUpperCase() === 'EMERGENCY');
+          if (hasEmergencyAction || driftState === 'critical' || driftState === 'high_risk') {
+              triggerCrisisMode();
+          }
 
           setAssessment({ active: false, currentStep: -1, scores: [] });
           
           const resultMessage = `Assessment Complete.\n\nTotal Score: ${totalScore}/27\nSeverity: ${severity}\nStatus: ${driftState.charAt(0).toUpperCase() + driftState.slice(1)}\n\nRecommendation: ${recommendation}`;
           
-          const options = severity === "Severe" || severity === "Moderately Severe" 
-              ? [{ label: "Call Helpline (14416)", value: "call_help", action: "tel:14416" }]
+          const isHighRisk = severity.includes("Severe") || severity === "Severe" || driftState === "critical" || hasEmergencyAction;
+          const options = isHighRisk 
+              ? [
+                  { label: "Call Tele-MANAS (14416)", value: "call_telemanas", action: "tel:14416" },
+                  { label: "Call KIRAN (1800-599-0019)", value: "call_kiran", action: "tel:18005990019" }
+                ]
               : undefined;
 
           addBotMessage(resultMessage, options);
@@ -234,6 +246,12 @@ const ChatInterface: React.FC = () => {
       const driftState = data.drift_state || "stable";
       const driftScore = data.drift_score || 0;
       const actions = data.actions || [];
+
+      // Defense-in-depth: If backend flagged EMERGENCY action, trigger the crisis banner
+      const hasEmergencyAction = actions.some((act: any) => act.type && act.type.toUpperCase() === 'EMERGENCY');
+      if (hasEmergencyAction) {
+        triggerCrisisMode();
+      }
       
       // Map drift state to sentiment for dashboard compatibility
       let sentiment = 0;
