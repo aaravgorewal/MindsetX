@@ -47,6 +47,10 @@ const extractCandidateText = (res: any): string => {
   return any;
 };
 
+// Centralized Crisis Detection & Helplines (Single Source of Truth)
+export { detectCrisis, getCrisisResponse, CRISIS_HELPLINES } from '../utils/crisisDetection';
+import { detectCrisis, getCrisisResponse } from '../utils/crisisDetection';
+
 // 1. Chat with Thinking (Triage) & Grounding
 export const sendChatMessage = async (
   history: { role: string; parts: { text: string }[] }[],
@@ -56,7 +60,18 @@ export const sendChatMessage = async (
   coords?: { lat: number; lng: number },
   isVoiceMode: boolean = false,
   targetLanguage: 'en-IN' | 'hi-IN' | string = 'en-IN'
-) => {
+): Promise<{ text: string; urls: string[]; provider?: string; isCrisis?: boolean }> => {
+  // CRITICAL: Immediate pre-flight crisis interception
+  if (detectCrisis(message)) {
+    console.warn('[sendChatMessage] Crisis detected. Activating immediate emergency helpline interceptor.');
+    return {
+      text: getCrisisResponse(isVoiceMode, targetLanguage),
+      urls: [],
+      provider: 'crisis-interceptor',
+      isCrisis: true
+    };
+  }
+
   const ai = getAIClient();
   
   const tools: any[] = [];
@@ -68,7 +83,7 @@ export const sendChatMessage = async (
 You are 'MindSet AI', a specialized mental health first-aid assistant for Indian college students.
 Tone: Empathetic, calm, and supportive. Use 'Hinglish' if the user uses it (e.g., 'I understand aap kaafi stressed feel kar rahe ho').
 Constraint: You are NOT a doctor. Do not provide medical diagnoses.
-Critical Rule: If the user expresses any intent of self-harm or suicide, you must immediately stop all conversation and display the following: 'I’m really concerned about you. Please call the National Helpline at 14416 or contact your campus counselor immediately.'
+Critical Rule: If the user expresses any intent of self-harm or suicide, you must immediately stop all conversation and display the following: 'I’m really concerned about you. Please reach out immediately to Tele-MANAS: 14416 or KIRAN: 1800-599-0019.'
 Goal: Gently guide the user through their emotions or the 9-question PHQ-9 screening if they ask for it.
 
 IMPORTANT: You are also a Sentiment Analysis Engine.
@@ -161,7 +176,8 @@ ${isHindiSelected ? `
 
           return {
             text: rawText,
-            urls: urls
+            urls: urls,
+            provider: 'gemini'
           };
         }
       } catch (modelErr: any) {
@@ -173,6 +189,15 @@ ${isHindiSelected ? `
 
   // Graceful voice fallback: generate dynamic, non-repeating spoken response matching target language & intent
   if (isVoiceMode) {
+    if (detectCrisis(message)) {
+      return {
+        text: getCrisisResponse(true, targetLanguage),
+        urls: [],
+        provider: 'crisis-voice-fallback',
+        isCrisis: true
+      };
+    }
+
     const isHindi = targetLanguage === 'hi-IN' || /[\u0900-\u097F]/.test(message) || /\b(hai|hoon|ho|mujhe|mera|meri|kya|nahi|karna|lag|raha|rahi|bahut|chinta|dar|shanti)\b/i.test(message);
     const lower = message.toLowerCase();
     const turnCount = Math.floor(history.length / 2);
@@ -202,11 +227,26 @@ ${isHindiSelected ? `
 
     return {
       text: fallbackReply,
-      urls: []
+      urls: [],
+      provider: 'voice-fallback'
     };
   }
 
-  throw new Error("No response generated from AI models");
+  // Graceful text fallback
+  if (detectCrisis(message)) {
+    return {
+      text: getCrisisResponse(false, targetLanguage),
+      urls: [],
+      provider: 'crisis-text-fallback',
+      isCrisis: true
+    };
+  }
+
+  return {
+    text: "I am right here with you. Please share what's on your mind, or start the PHQ-9 wellness assessment if you'd like a quick mental health check-in.",
+    urls: [],
+    provider: 'local-fallback'
+  };
 };
 
 // 2. Image Generation
