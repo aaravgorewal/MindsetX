@@ -15,6 +15,7 @@ import Landing from './components/Landing';
 import Dashboard from './components/Dashboard';
 import WelcomeTransition from './components/WelcomeTransition';
 import ErrorBoundary from './components/ErrorBoundary';
+import { EmergencyModal } from './components/EmergencyModal';
 import { Screen } from './types';
 import { useAuth } from './context/AuthContext';
 import { Lock, ScanFace, Fingerprint, ChevronRight } from 'lucide-react';
@@ -24,6 +25,7 @@ const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.HOME);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
   const [isAppLocked, setIsAppLocked] = useState(false);
+  const [isEmergencyModalOpen, setIsEmergencyModalOpen] = useState(false);
   const [pendingConsentCount, setPendingConsentCount] = useState<number>(1);
   const [hasStartedOnboarding, setHasStartedOnboarding] = useState(false);
   const [showWelcome, setShowWelcome] = useState<boolean>(() => {
@@ -236,8 +238,15 @@ const App: React.FC = () => {
         <Header 
           onMenuClick={() => setSidebarOpen(true)} 
           onProfileClick={() => setCurrentScreen(Screen.PROFILE)}
+          onEmergencyClick={() => setIsEmergencyModalOpen(true)}
           userName={user.displayName || user.email?.split('@')[0]}
           userAvatar={user.photoURL}
+        />
+
+        {/* Global Emergency Crisis Support Modal */}
+        <EmergencyModal 
+          isOpen={isEmergencyModalOpen} 
+          onClose={() => setIsEmergencyModalOpen(false)} 
         />
 
         {/* Scrollable Main View */}
