@@ -382,7 +382,7 @@ def generate_recommendations(
         
         elif overall_status == "critical_drift":
             recommendations.append("🔴 URGENT: Significant changes detected in your mental health.")
-            recommendations.append("Please reach out to a counselor or call the crisis helpline: 14416")
+            recommendations.append("Please reach out now — Tele-MANAS: 14416 or KIRAN: 1800-599-0019, both free and available 24/7.")
             
             trend = latest_assessment.get("score_trend", "unknown")
             if trend == "worsening":
