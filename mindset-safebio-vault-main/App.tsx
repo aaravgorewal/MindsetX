@@ -229,6 +229,7 @@ const App: React.FC = () => {
         onClose={() => setSidebarOpen(false)} 
         currentScreen={currentScreen} 
         onNavigate={setCurrentScreen} 
+        onEmergencyClick={() => setIsEmergencyModalOpen(true)}
       />
 
       {/* Main Content Area */}
