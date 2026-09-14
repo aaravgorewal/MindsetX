@@ -51,8 +51,14 @@ const ChatInterface: React.FC = () => {
     scores: []
   });
 
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    } else {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
   };
 
   useEffect(() => {
@@ -378,9 +384,9 @@ const ChatInterface: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-full relative pb-24">
-      {/* Sticky Header & Pinned Crisis Area */}
-      <div className="sticky top-0 z-30 flex-none bg-charcoal/95 backdrop-blur-md border-b border-white/10 shadow-sm">
+    <div className="flex flex-col h-[calc(100vh-9rem)] min-h-[550px] relative rounded-2xl overflow-hidden border border-white/5 bg-charcoal/40 backdrop-blur-sm shadow-xl">
+      {/* Header & Pinned Crisis Area */}
+      <div className="flex-none bg-charcoal/95 border-b border-white/10 shadow-sm z-20">
         <div className="p-4 pt-[calc(env(safe-area-inset-top)+1rem)] flex justify-between items-center">
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             MindSet Chat
@@ -430,7 +436,7 @@ const ChatInterface: React.FC = () => {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4 no-scrollbar">
         {messages.map((msg) => (
           <div key={msg.id} className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
             <div className={`max-w-[85%] rounded-2xl p-4 shadow-md ${
