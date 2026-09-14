@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Home, MessageCircle, Activity, ShieldCheck, Palette, X, LogOut, Settings, HelpCircle, Brain, User } from 'lucide-react';
+import { Home, MessageCircle, Activity, ShieldCheck, Palette, X, LogOut, Settings, HelpCircle, Brain, User, Phone, PhoneCall, ShieldAlert } from 'lucide-react';
 import { Screen } from '../types';
 import { useAuth } from '../context/AuthContext';
 
@@ -9,9 +9,10 @@ interface SidebarProps {
   onClose: () => void;
   currentScreen: Screen;
   onNavigate: (screen: Screen) => void;
+  onEmergencyClick?: () => void;
 }
 
-const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentScreen, onNavigate }) => {
+const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentScreen, onNavigate, onEmergencyClick }) => {
   const { signOut } = useAuth();
   const navItems = [
     { id: Screen.HOME, icon: Home, label: 'Feed' },
@@ -90,6 +91,54 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose, currentScreen, onNav
             );
           })}
         </nav>
+
+        {/* Permanent Emergency Support Access - Fixed Section */}
+        <div className="p-3 mx-3 mb-1 rounded-2xl bg-red-950/20 border border-red-500/20 space-y-2">
+          <div className="flex items-center justify-between text-[11px] font-bold tracking-wider text-red-300 px-0.5">
+            <span className="flex items-center gap-1.5">
+              <ShieldAlert size={14} className="text-red-400" />
+              Emergency Support
+            </span>
+            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-md bg-red-500/20 text-red-300 border border-red-500/30">24/7 Free</span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5">
+            <a
+              href="tel:14416"
+              onClick={(e) => e.stopPropagation()}
+              className="flex flex-col p-2 rounded-xl bg-white/5 hover:bg-emerald-500/15 border border-emerald-500/30 transition-all text-left group"
+              title="Call Tele-MANAS (14416)"
+            >
+              <span className="text-[9px] text-gray-400 font-medium">Tele-MANAS</span>
+              <span className="text-xs font-bold text-emerald-400 group-hover:underline font-mono flex items-center gap-1 mt-0.5">
+                <Phone size={10} /> 14416
+              </span>
+            </a>
+
+            <a
+              href="tel:18005990019"
+              onClick={(e) => e.stopPropagation()}
+              className="flex flex-col p-2 rounded-xl bg-white/5 hover:bg-blue-500/15 border border-blue-500/30 transition-all text-left group"
+              title="Call KIRAN (1800-599-0019)"
+            >
+              <span className="text-[9px] text-gray-400 font-medium">KIRAN</span>
+              <span className="text-xs font-bold text-blue-400 group-hover:underline font-mono flex items-center gap-1 mt-0.5">
+                <Phone size={10} /> 1800-599
+              </span>
+            </a>
+          </div>
+
+          <button
+            onClick={() => {
+              if (onEmergencyClick) onEmergencyClick();
+              onClose();
+            }}
+            className="w-full py-1.5 px-2 rounded-lg bg-red-500/10 hover:bg-red-500/20 border border-red-500/25 text-[11px] font-semibold text-red-300 hover:text-white flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <PhoneCall size={12} />
+            <span>Open Crisis Helplines</span>
+          </button>
+        </div>
 
         <div className="p-4 border-t border-white/10 space-y-2">
           {bottomItems.map((item, idx) => {
