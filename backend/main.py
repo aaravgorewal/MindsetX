@@ -443,12 +443,37 @@ async def chat(request: ChatRequest):
         }
         unified_drift = drift_state_map.get(mas_result["drift_state"], DriftState.NO_DATA)
 
+        # ── Detect Crisis Language in User Message or MAS Output ──────────────────
+        is_crisis = mas_result.get("is_crisis", False)
+        lower_msg = request.message.lower()
+        crisis_keywords = [
+            "suicide", "kill myself", "killing myself", "end my life", "ending my life", "end it all", "ending it all",
+            "harm myself", "harming myself", "hurt myself", "hurting myself", "want to die", "wanna die", "feel like dying",
+            "cut myself", "cutting myself", "slit my wrists", "slit my wrist", "take my life", "taking my life", "take my own life",
+            "better off dead", "don't want to live", "dont want to live", "no reason to live", "hang myself", "overdose",
+            "suicidal", "self harm", "self-harm", "mar jaunga", "khatam karna", "jaan deni", "jaan lena",
+            "jeena nahi", "mar jana", "khudkushi", "atmahatya", "zeher", "marna chahta"
+        ]
+        if any(kw in lower_msg for kw in crisis_keywords):
+            is_crisis = True
+
+        if is_crisis:
+            unified_drift = DriftState.CRITICAL
+
         # ── Build sentinel actions for the Unified wrapper ────────────────────
         actions = []
-        if unified_drift == DriftState.CRITICAL:
+        if is_crisis or unified_drift == DriftState.CRITICAL:
+            trigger_reason = "chat_crisis_keyword" if is_crisis else "mas_critical"
             actions.append(create_emergency_action(
-                f"High-risk drift detected (score={mas_result['drift_score']:.2f}). Immediate support needed.",
+                f"Critical crisis / high-risk drift detected (score={mas_result['drift_score']:.2f}). Immediate support needed.",
                 target="crisis_team",
+                details={
+                    "helplines": [
+                        {"name": "Tele-MANAS", "number": "14416"},
+                        {"name": "KIRAN", "number": "1800-599-0019"}
+                    ],
+                    "trigger": trigger_reason
+                }
             ).dict())
         elif unified_drift == DriftState.DRIFTING:
             actions.append(create_intervene_action(
@@ -518,6 +543,7 @@ async def submit_phq9_assessment(request: PHQ9Request):
         
         # Calculate total score
         total_score = sum(request.scores)
+        q9_score = request.scores[8] if len(request.scores) > 8 else 0
         
         # Determine severity and drift state based on PHQ-9 scoring guidelines
         if total_score <= 4:
@@ -540,6 +566,12 @@ async def submit_phq9_assessment(request: PHQ9Request):
             severity = "Severe"
             drift_state = DriftState.CRITICAL
             recommendation = "Immediate help recommended. Please use the SOS button or call the helpline now."
+
+        # Clinical override: Item 9 (thoughts of self-harm / suicide) independently forces CRITICAL
+        if q9_score > 0:
+            severity = "Severe (Elevated Risk — Item 9)"
+            drift_state = DriftState.CRITICAL
+            recommendation = "Please reach out now — Tele-MANAS: 14416 or KIRAN: 1800-599-0019, both free and available 24/7."
         
         # Create text representation of PHQ-9 responses for embedding
         phq9_text_parts = []
@@ -575,9 +607,18 @@ async def submit_phq9_assessment(request: PHQ9Request):
         # Build actions based on severity
         actions = []
         if drift_state == DriftState.CRITICAL:
+            trigger_reason = "phq9_q9" if q9_score > 0 else "phq9_total_critical"
             actions.append(create_emergency_action(
-                "Critical PHQ-9 score detected. Immediate intervention needed.",
-                target="crisis_team"
+                f"Critical PHQ-9 assessment detected (total={total_score}{', Item 9 flagged' if q9_score > 0 else ''}). Immediate intervention needed.",
+                target="crisis_team",
+                details={
+                    "helplines": [
+                        {"name": "Tele-MANAS", "number": "14416"},
+                        {"name": "KIRAN", "number": "1800-599-0019"}
+                    ],
+                    "trigger": trigger_reason,
+                    "q9_score": q9_score
+                }
             ).dict())
         elif drift_state == DriftState.DRIFTING:
             actions.append(create_intervene_action(
@@ -649,7 +690,15 @@ async def detect_drift(request: DriftRequest):
         actions = []
         if alert_level == "red":
             actions.append(create_emergency_action(
-                "Critical drift detected. Immediate intervention required."
+                "Critical drift detected. Immediate intervention required.",
+                target="crisis_team",
+                details={
+                    "helplines": [
+                        {"name": "Tele-MANAS", "number": "14416"},
+                        {"name": "KIRAN", "number": "1800-599-0019"}
+                    ],
+                    "trigger": "drift_critical"
+                }
             ).dict())
         elif alert_level == "yellow":
             actions.append(create_intervene_action(
@@ -877,10 +926,17 @@ async def process_data(data: Assessment):
     """
     try:
         # Clinical Crisis Check (PHQ-9 Question 9)
-        if data.responses[8] > 0:
+        if len(data.responses) > 8 and data.responses[8] > 0:
             return create_emergency_action(
                 "High self-harm risk detected. Immediate intervention required.",
-                target="crisis_team"
+                target="crisis_team",
+                details={
+                    "helplines": [
+                        {"name": "Tele-MANAS", "number": "14416"},
+                        {"name": "KIRAN", "number": "1800-599-0019"}
+                    ],
+                    "trigger": "phq9_q9"
+                }
             )
         
         # NLP + Clinical Scoring
@@ -897,7 +953,15 @@ async def process_data(data: Assessment):
             drift_state = DriftState.CRITICAL
             nudge = "🚨 UNCLENCH YOUR JAW! Free delivery on 5 deep breaths."
             actions = [create_emergency_action(
-                "Critical distress index detected. Immediate support recommended."
+                "Critical distress index detected. Immediate support recommended.",
+                target="crisis_team",
+                details={
+                    "helplines": [
+                        {"name": "Tele-MANAS", "number": "14416"},
+                        {"name": "KIRAN", "number": "1800-599-0019"}
+                    ],
+                    "trigger": "distress_index_critical"
+                }
             ).dict()]
         elif di > 0.4:
             drift_state = DriftState.DRIFTING
@@ -2306,7 +2370,14 @@ async def execute_multi_agent_system(request: MASExecuteRequest):
         if max_concern_level == "critical":
             actions.append(create_emergency_action(
                 "Critical MAS analysis. Immediate intervention required.",
-                target="crisis_team"
+                target="crisis_team",
+                details={
+                    "helplines": [
+                        {"name": "Tele-MANAS", "number": "14416"},
+                        {"name": "KIRAN", "number": "1800-599-0019"}
+                    ],
+                    "trigger": "mas_critical"
+                }
             ).dict())
         elif max_concern_level == "elevated":
             actions.append(create_intervene_action(
