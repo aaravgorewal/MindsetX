@@ -78,16 +78,27 @@ class Strategist:
         text = (user_message or "").lower().strip()
 
         # 1. IMMEDIATE CRISIS CHECK
-        crisis_keywords = ["suicide", "kill myself", "end my life", "harm myself", "want to die", "ending it all"]
+        crisis_keywords = [
+            "suicide", "kill myself", "killing myself", "end my life", "ending my life", "end it all", "ending it all",
+            "harm myself", "harming myself", "hurt myself", "hurting myself", "want to die", "wanna die", "feel like dying",
+            "cut myself", "cutting myself", "slit my wrists", "slit my wrist", "take my life", "taking my life", "take my own life",
+            "better off dead", "don't want to live", "dont want to live", "no reason to live", "hang myself", "overdose",
+            "suicidal", "self harm", "self-harm", "mar jaunga", "khatam karna", "jaan deni", "jaan lena",
+            "jeena nahi", "mar jana", "khudkushi", "atmahatya", "zeher", "marna chahta",
+            "आत्महत्या", "खुदकुशी", "जान देनी", "जान लेना", "जीना नहीं", "मर जाना", "मरना चाहता", "मरना चाहती", "मर जाऊंगा", "मर जाऊंगी", "ज़हर"
+        ]
         if any(kw in text for kw in crisis_keywords):
             return {
                 "message": (
                     "I am deeply concerned about you and want to ensure you are safe. "
-                    "You do not have to carry this alone. Please reach out right now: "
-                    "call the National Tele-MANAS helpline at 14416 (available 24/7) or contact "
-                    "your campus wellness counselor or a trusted loved one immediately."
+                    "You do not have to carry this alone. Please reach out right now to India's official 24/7 free national crisis helplines:\n\n"
+                    "• Tele-MANAS: Call 14416 or 1800-891-4416 (24/7, Toll-Free, Multi-lingual)\n"
+                    "• KIRAN Mental Health Helpline: Call 1800-599-0019 (24/7, Toll-Free)\n"
+                    "• Emergency Services: Dial 112\n\n"
+                    "Please contact a trusted loved one or your campus counselor immediately. Help is available right now."
                 ),
-                "actions": ["tele_manas", "urgent_counselor", "human_alert"],
+                "actions": ["tele_manas", "kiran_helpline", "urgent_counselor", "emergency_services"],
+                "is_crisis": True,
             }
 
         # 2. TOPIC DETECTION FOR MESSAGE-AWARE REFLECTION
