@@ -6,6 +6,7 @@ import { GoogleGenAI, LiveServerMessage } from '@google/genai';
 import { useAuth } from '../context/AuthContext';
 import { saveUserBooking } from '../services/userService';
 import { sendChatMessage } from '../services/geminiService';
+import { detectCrisis, getCrisisResponse } from '../utils/crisisDetection';
 import {
   synthesizeAndPlay,
   stopActiveSpeech,
@@ -255,6 +256,7 @@ const GeminiLiveSession = ({ onEnd }: { onEnd: () => void }) => {
   const [isAiThinking, setIsAiThinking] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isAiSpeaking, setIsAiSpeaking] = useState(false);
+  const [isCrisisActive, setIsCrisisActive] = useState(false);
   const [ttsProvider, setTtsProvider] = useState<TtsProvider | null>(null);
   const [ttsProviderLabel, setTtsProviderLabel] = useState<TtsProviderLabel | null>(null);
 
@@ -278,6 +280,11 @@ const GeminiLiveSession = ({ onEnd }: { onEnd: () => void }) => {
     setIsAiSpeaking(false);
     setAiSubtitle('');
 
+    // Pre-check for crisis language in voice call
+    if (detectCrisis(userUtterance)) {
+      setIsCrisisActive(true);
+    }
+
     let replyToSpeak = '';
     try {
       const historySnapshot = [...conversationHistoryRef.current];
@@ -299,6 +306,10 @@ const GeminiLiveSession = ({ onEnd }: { onEnd: () => void }) => {
         selectedLangRef.current // targetLanguage
       );
 
+      if (result.isCrisis) {
+        setIsCrisisActive(true);
+      }
+
       replyToSpeak = result.text.trim();
       console.log(`[MindSet AI Voice Response (${selectedLangRef.current})]: "${replyToSpeak}"`);
       if (isMountedRef.current) {
@@ -311,10 +322,15 @@ const GeminiLiveSession = ({ onEnd }: { onEnd: () => void }) => {
       );
     } catch (err: any) {
       console.error('Voice chat error:', err);
-      const isHindi = selectedLangRef.current === 'hi-IN';
-      replyToSpeak = isHindi
-        ? 'हाँ, मैं आपकी बात समझ सकता हूँ। गहरी साँस लीजिए, हम साथ मिलकर इसका समाधान निकालेंगे।'
-        : "Hmm, I hear you. Take a slow, deep breath, and we will take this one step at a time.";
+      if (detectCrisis(userUtterance)) {
+        setIsCrisisActive(true);
+        replyToSpeak = getCrisisResponse(true, selectedLangRef.current);
+      } else {
+        const isHindi = selectedLangRef.current === 'hi-IN';
+        replyToSpeak = isHindi
+          ? 'हाँ, मैं आपकी बात समझ सकता हूँ। गहरी साँस लीजिए, हम साथ मिलकर इसका समाधान निकालेंगे।'
+          : "Hmm, I hear you. Take a slow, deep breath, and we will take this one step at a time.";
+      }
       if (isMountedRef.current) {
         setAiSubtitle(replyToSpeak);
       }
@@ -358,6 +374,9 @@ const GeminiLiveSession = ({ onEnd }: { onEnd: () => void }) => {
     const turnText = (turnAccumulatorRef.current || liveInterimRef.current).trim();
     if (turnText) {
       console.log(`[MindSet Voice Turn Completed - ${selectedLangRef.current}]: "${turnText}"`);
+      if (detectCrisis(turnText)) {
+        setIsCrisisActive(true);
+      }
       setLastFinalTranscript(turnText);
       setInterimTranscript('');
       setIsSpeaking(false);
@@ -444,6 +463,11 @@ const GeminiLiveSession = ({ onEnd }: { onEnd: () => void }) => {
         liveInterimRef.current = display;
         setInterimTranscript(display);
         setIsSpeaking(true);
+
+        // Immediate real-time crisis trigger on live speech transcript
+        if (detectCrisis(display)) {
+          setIsCrisisActive(true);
+        }
 
         // Reset silence timer: 1.3s of silence commits this turn
         resetSilenceTimer(1300);
@@ -647,6 +671,30 @@ const GeminiLiveSession = ({ onEnd }: { onEnd: () => void }) => {
           </button>
         </div>
       </div>
+
+      {/* Voice Call Crisis Emergency Banner */}
+      {isCrisisActive && (
+        <div className="relative z-30 w-full max-w-md mx-auto my-2 p-3.5 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 border border-red-400 text-white shadow-2xl animate-pulse">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertCircle size={18} className="text-white" />
+            <span className="text-xs font-bold uppercase tracking-wider">Immediate Crisis Support (24/7 Free)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <a
+              href="tel:14416"
+              className="flex-1 py-1.5 px-3 bg-white text-red-600 font-bold text-xs rounded-xl text-center shadow hover:bg-red-50 active:scale-95 transition-all"
+            >
+              Tele-MANAS: 14416
+            </a>
+            <a
+              href="tel:18005990019"
+              className="flex-1 py-1.5 px-3 bg-red-950 text-red-100 border border-red-400 font-bold text-xs rounded-xl text-center shadow hover:bg-red-900 active:scale-95 transition-all"
+            >
+              KIRAN: 1800-599-0019
+            </a>
+          </div>
+        </div>
+      )}
 
       {/* Center Call Visuals & Status */}
       <div className="text-center space-y-6 relative z-10 my-auto w-full max-w-md">
