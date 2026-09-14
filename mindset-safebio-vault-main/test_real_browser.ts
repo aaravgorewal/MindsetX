@@ -165,7 +165,7 @@ async function runRealBrowserVerification() {
     return buttons.find(b => b.textContent && b.textContent.includes('MindSet AI'));
   });
   if (chatNavBtn && chatNavBtn.asElement()) {
-    await chatNavBtn.asElement()!.click();
+    await (chatNavBtn.asElement() as any).click();
     await new Promise(r => setTimeout(r, 1200));
   }
 
@@ -180,7 +180,7 @@ async function runRealBrowserVerification() {
   await new Promise(r => setTimeout(r, 2000));
 
   const bannerExistsSafe = await page.evaluate(() => {
-    const banner = document.querySelector('.bg-red-600.animate-pulse');
+    const banner = document.querySelector('.animate-pulse.bg-gradient-to-r, .animate-pulse.from-red-600');
     return !!banner;
   });
   console.log(`Banner for diet text: ${bannerExistsSafe ? '❌ FALSE ALARM' : '✅ NO BANNER (Correct)'}`);
@@ -190,20 +190,43 @@ async function runRealBrowserVerification() {
   await page.focus('textarea');
   await page.type('textarea', "I don't feel like I'm worth anything, better off dead", { delay: 15 });
   await page.keyboard.press('Enter');
-  await new Promise(r => setTimeout(r, 2000));
+  
+  console.log('Waiting for MAS backend crisis response...');
+  try {
+    await page.waitForFunction(() => {
+      const text = document.body.innerText;
+      return text.includes('deeply concerned') || text.includes('Tele-MANAS: Call 14416');
+    }, { timeout: 15000 });
+    console.log('✅ Received empathetic AI crisis response in UI!');
+  } catch (err) {
+    console.log('Timeout waiting for AI response text, checking current state...');
+  }
+  await new Promise(r => setTimeout(r, 1000));
 
   const bannerDetails = await page.evaluate(() => {
-    const banner = document.querySelector('.animate-pulse.bg-red-600') as HTMLElement;
+    const banner = document.querySelector('.animate-pulse.bg-gradient-to-r, .animate-pulse.from-red-600') as HTMLElement;
+    const botTextNodes = Array.from(document.querySelectorAll('.font-hindi, .whitespace-pre-wrap')).map(el => (el as HTMLElement).innerText);
+    const optionsButtons = Array.from(document.querySelectorAll('button[class*="bg-red-500"], button:has(svg.text-red-500)')).map(b => (b as HTMLElement).innerText.trim());
+
     return {
       found: !!banner,
-      bannerText: banner ? banner.innerText : null,
-      hasTelemanas: banner ? banner.innerText.includes('14416') : false
+      bannerText: banner ? banner.innerText.replace(/\n/g, ' ') : null,
+      hasTelemanas: banner ? banner.innerText.includes('14416') : false,
+      hasKiran: banner ? banner.innerText.includes('1800-599') : false,
+      botMessages: botTextNodes,
+      hasHelplineInBotMsg: botTextNodes.some(t => t.includes('14416') || t.includes('Tele-MANAS: Call')),
+      isGenericSuccessMsg: botTextNodes.some(t => t.includes('Chat processed successfully')),
+      optionsButtons: optionsButtons
     };
   });
 
   console.log(`Crisis Banner Found: ${bannerDetails.found ? '✅ YES' : '❌ NO'}`);
-  console.log(`Banner Text: "${bannerDetails.bannerText ? bannerDetails.bannerText.replace(/\n/g, ' ') : ''}"`);
-  console.log(`Includes Tele-MANAS 14416: ${bannerDetails.hasTelemanas ? '✅ YES' : '❌ NO'}`);
+  console.log(`Banner Text: "${bannerDetails.bannerText}"`);
+  console.log(`Includes Tele-MANAS: ${bannerDetails.hasTelemanas ? '✅ YES' : '❌ NO'}`);
+  console.log(`Includes KIRAN: ${bannerDetails.hasKiran ? '✅ YES' : '❌ NO'}`);
+  console.log(`Empathetic AI Response Contains Helplines: ${bannerDetails.hasHelplineInBotMsg ? '✅ YES' : '❌ NO'}`);
+  console.log(`Generic "Chat processed successfully" displayed: ${bannerDetails.isGenericSuccessMsg ? '❌ YES (BUG)' : '✅ NO (Fixed)'}`);
+  console.log(`Bot Messages in Chat:`, JSON.stringify(bannerDetails.botMessages, null, 2));
 
   const shotChat = path.join(SCREENSHOT_DIR, 'chat_crisis_banner.png');
   await page.screenshot({ path: shotChat });
@@ -222,7 +245,7 @@ async function runRealBrowserVerification() {
     return buttons.find(b => b.textContent && b.textContent.includes('Live Session'));
   });
   if (liveNavBtn && liveNavBtn.asElement()) {
-    await liveNavBtn.asElement()!.click();
+    await (liveNavBtn.asElement() as any).click();
     await new Promise(r => setTimeout(r, 1500));
   }
 
@@ -233,7 +256,7 @@ async function runRealBrowserVerification() {
     return buttons.find(b => b.textContent && b.textContent.includes('Start Live'));
   });
   if (startLiveBtn && startLiveBtn.asElement()) {
-    await startLiveBtn.asElement()!.click();
+    await (startLiveBtn.asElement() as any).click();
     await new Promise(r => setTimeout(r, 2000));
   }
 
