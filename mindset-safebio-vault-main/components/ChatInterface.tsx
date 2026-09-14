@@ -146,15 +146,19 @@ const ChatInterface: React.FC = () => {
               timestamp: new Date().toISOString()
           });
 
-          const { data } = response;
-          const totalScore = data.totalScore ?? data.total_score ?? scores.reduce((a, b) => a + b, 0);
-          const severity = data.severity || "Unknown";
-          const driftState = data.driftState ?? data.drift_state ?? "stable";
-          const recommendation = data.recommendation || (data.recommendations && data.recommendations[0]) || "Take care of yourself.";
-          const actions = data.actions || [];
+          const raw = response.data || {};
+          const data = raw.data || raw;
+          const totalScore = data.total_score ?? data.totalScore ?? raw.total_score ?? raw.totalScore ?? scores.reduce((a, b) => a + b, 0);
+          const severity = data.severity ?? raw.severity ?? "Unknown";
+          const driftState = raw.drift_state ?? data.drift_state ?? data.driftState ?? "stable";
+          const recommendation = data.recommendation || (data.recommendations && data.recommendations[0]) || raw.recommendation || (raw.recommendations && raw.recommendations[0]) || "Take care of yourself.";
+          const actions = [...(raw.actions || []), ...(data.actions || [])];
 
           // Connect backend emergency signal to frontend crisis banner (Defense-in-Depth)
-          const hasEmergencyAction = actions.some((act: any) => act.type && act.type.toUpperCase() === 'EMERGENCY');
+          const hasEmergencyAction = actions.some((act: any) => {
+            if (typeof act === 'string') return act.toLowerCase().includes('emergency') || act.toLowerCase().includes('tele_manas') || act.toLowerCase().includes('kiran');
+            return (act?.type && act.type.toUpperCase() === 'EMERGENCY') || (act?.target === 'crisis_team');
+          });
           if (hasEmergencyAction || driftState === 'critical' || driftState === 'high_risk') {
               triggerCrisisMode();
           }
@@ -217,7 +221,10 @@ const ChatInterface: React.FC = () => {
         return;
     }
 
-    checkForCrisis(textToSend);
+    const isClientCrisis = detectCrisis(textToSend);
+    if (isClientCrisis) {
+      triggerCrisisMode();
+    }
 
     const userMsg: ChatMessage = { id: Date.now().toString(), role: 'user', text: textToSend };
     setMessages(prev => [...prev, userMsg]);
@@ -239,23 +246,57 @@ const ChatInterface: React.FC = () => {
 
       // Send message to backend /chat endpoint
       const response = await apiService.post<any>('/chat', requestData);
-      const data = response.data;
+      const rawData = response.data || {};
+      const payload = rawData.data || rawData;
       
-      // Parse response from MAS orchestrator
-      let displayText = data.reply || data.message || "";
-      const driftState = data.drift_state || "stable";
-      const driftScore = data.drift_score || 0;
-      const actions = data.actions || [];
+      // Parse response from MAS orchestrator:
+      // Note: rawData is UnifiedResponse wrapper ({ status, data, drift_state, actions, message }).
+      // The actual conversational AI reply is inside payload.reply!
+      // rawData.message is just the API status string ("Chat processed successfully").
+      let displayText = payload.reply || "";
+      if (!displayText) {
+        if (payload.message && payload.message !== "Chat processed successfully" && payload.message !== "Service is running") {
+          displayText = payload.message;
+        } else if (rawData.reply) {
+          displayText = rawData.reply;
+        } else if (isClientCrisis) {
+          displayText = "I am deeply concerned about you and want to ensure you are safe. You do not have to carry this alone. Please reach out right now to India's official 24/7 free national crisis helplines:\n\n• Tele-MANAS: Call 14416 or 1800-891-4416 (24/7, Toll-Free, Multi-lingual)\n• KIRAN Mental Health Helpline: Call 1800-599-0019 (24/7, Toll-Free)\n• Emergency Services: Dial 112\n\nPlease contact a trusted loved one or your campus counselor immediately. Help is available right now.";
+        } else {
+          displayText = "I hear you. I'm here to support you.";
+        }
+      }
 
-      // Defense-in-depth: If backend flagged EMERGENCY action, trigger the crisis banner
-      const hasEmergencyAction = actions.some((act: any) => act.type && act.type.toUpperCase() === 'EMERGENCY');
-      if (hasEmergencyAction) {
+      const driftState = rawData.drift_state || payload.drift_state || "stable";
+      const driftScore = typeof rawData.drift_score === 'number' ? rawData.drift_score : (payload.drift_score || 0);
+      const actions = [
+        ...(Array.isArray(rawData.actions) ? rawData.actions : []),
+        ...(Array.isArray(payload.actions) ? payload.actions : [])
+      ];
+
+      // Defense-in-depth: Check for emergency action signals or critical drift
+      const hasEmergencyAction = actions.some((act: any) => {
+        if (typeof act === 'string') {
+          return act.toLowerCase().includes('emergency') || 
+                 act.toLowerCase().includes('tele_manas') || 
+                 act.toLowerCase().includes('kiran');
+        }
+        return (act?.type && act.type.toUpperCase() === 'EMERGENCY') ||
+               (act?.target === 'crisis_team');
+      });
+
+      const isCrisisActive = isClientCrisis || 
+                             detectCrisis(displayText) || 
+                             hasEmergencyAction || 
+                             driftState === 'critical' || 
+                             driftState === 'high_risk';
+
+      if (isCrisisActive) {
         triggerCrisisMode();
       }
       
       // Map drift state to sentiment for dashboard compatibility
       let sentiment = 0;
-      if (driftState === "high_risk") sentiment = -0.8;
+      if (driftState === "high_risk" || driftState === "critical") sentiment = -0.8;
       else if (driftState === "early_warning") sentiment = -0.3;
       else if (driftState === "stable") sentiment = 0.5;
       
@@ -277,20 +318,37 @@ const ChatInterface: React.FC = () => {
         id: (Date.now() + 1).toString(),
         role: 'model',
         text: displayText,
-        sentimentScore: sentiment
+        sentimentScore: sentiment,
+        options: isCrisisActive ? [
+          { label: "Call Tele-MANAS (14416)", value: "call_telemanas", action: "tel:14416" },
+          { label: "Call KIRAN (1800-599-0019)", value: "call_kiran", action: "tel:18005990019" }
+        ] : undefined
       };
       
-      checkForCrisis(displayText);
       setMessages(prev => [...prev, botMsg]);
     } catch (error: any) {
       console.error("Chat error:", error);
-      const errorMsg: ChatMessage = { 
-        id: Date.now().toString(), 
-        role: 'model', 
-        text: error.response?.data?.message || "Failed to connect to the backend. Please ensure the server is running on http://localhost:8000", 
-        isError: true 
-      };
-      setMessages(prev => [...prev, errorMsg]);
+      if (isClientCrisis) {
+        triggerCrisisMode();
+        const emergencyFallbackMsg: ChatMessage = {
+          id: (Date.now() + 1).toString(),
+          role: 'model',
+          text: "I am deeply concerned about you and want to ensure you are safe. You do not have to carry this alone. Please reach out right now to India's official 24/7 free national crisis helplines:\n\n• Tele-MANAS: Call 14416 or 1800-891-4416 (24/7, Toll-Free, Multi-lingual)\n• KIRAN Mental Health Helpline: Call 1800-599-0019 (24/7, Toll-Free)\n• Emergency Services: Dial 112\n\nPlease contact a trusted loved one or your campus counselor immediately. Help is available right now.",
+          sentimentScore: -0.8,
+          options: [
+            { label: "Call Tele-MANAS (14416)", value: "call_telemanas", action: "tel:14416" },
+            { label: "Call KIRAN (1800-599-0019)", value: "call_kiran", action: "tel:18005990019" }
+          ]
+        };
+        setMessages(prev => [...prev, emergencyFallbackMsg]);
+      } else {
+        const errorMsg: ChatMessage = { 
+          id: Date.now().toString(), 
+          role: 'model', 
+          text: error.response?.data?.message || "Failed to connect to the backend. Please ensure the server is running on http://localhost:5001", 
+        };
+        setMessages(prev => [...prev, errorMsg]);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -321,39 +379,54 @@ const ChatInterface: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full relative pb-24">
-      {/* Crisis Banner */}
-      {crisisDetected && (
-          <div className="absolute top-14 left-0 right-0 mx-4 rounded-xl bg-red-600 text-white p-3 flex justify-between items-center animate-pulse z-50 shadow-lg cursor-pointer" onClick={() => window.open('tel:14416')}>
-              <div className="flex items-center">
-                  <AlertOctagon className="mr-2" size={20} />
-                  <div className="text-xs font-bold">
-                      <div>Emergency Detected</div>
-                      <div className="font-normal text-[10px]">Tap to call Tele-MANAS (14416)</div>
-                  </div>
-              </div>
-              <div className="bg-white text-red-600 px-3 py-1.5 rounded-full text-xs font-bold flex items-center shadow-sm">
-                  <Phone size={12} className="mr-1"/> Call
-              </div>
+      {/* Sticky Header & Pinned Crisis Area */}
+      <div className="sticky top-0 z-30 flex-none bg-charcoal/95 backdrop-blur-md border-b border-white/10 shadow-sm">
+        <div className="p-4 pt-[calc(env(safe-area-inset-top)+1rem)] flex justify-between items-center">
+          <h2 className="text-xl font-bold text-white flex items-center gap-2">
+            MindSet Chat
+            <span className="text-xs font-normal px-2 py-1 rounded-full bg-teal-500/20 text-teal-400 border border-teal-500/30">Beta</span>
+          </h2>
+          
+          <div className="flex gap-2">
+              {behavioralFlag && (
+                   <div title={behavioralFlag} className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></div>
+              )}
+              {!assessment.active && (
+                  <button onClick={startAssessment} className="text-xs bg-saffron-500/10 text-saffron-500 border border-saffron-500/30 px-2 py-1 rounded-lg flex items-center gap-1 hover:bg-saffron-500/20 transition-colors font-bold">
+                      <ClipboardList size={12} /> Assess
+                  </button>
+              )}
           </div>
-      )}
-
-      {/* Header */}
-      <div className="p-4 border-b border-white/10 bg-charcoal/80 backdrop-blur-md sticky top-0 z-10 flex-none pt-[calc(env(safe-area-inset-top)+1rem)] flex justify-between items-center shadow-sm">
-        <h2 className="text-xl font-bold text-white flex items-center gap-2">
-          MindSet Chat
-          <span className="text-xs font-normal px-2 py-1 rounded-full bg-teal-500/20 text-teal-400 border border-teal-500/30">Beta</span>
-        </h2>
-        
-        <div className="flex gap-2">
-            {behavioralFlag && (
-                 <div title={behavioralFlag} className="w-2 h-2 rounded-full bg-purple-500 animate-pulse"></div>
-            )}
-            {!assessment.active && (
-                <button onClick={startAssessment} className="text-xs bg-saffron-500/10 text-saffron-500 border border-saffron-500/30 px-2 py-1 rounded-lg flex items-center gap-1 hover:bg-saffron-500/20 transition-colors font-bold">
-                    <ClipboardList size={12} /> Assess
-                </button>
-            )}
         </div>
+
+        {/* Prominent Crisis Support Banner (Permanently pinned at top of chat) */}
+        {crisisDetected && (
+            <div className="mx-4 mb-3 p-3.5 rounded-2xl bg-gradient-to-r from-red-600 via-rose-600 to-red-700 border border-red-400 text-white shadow-xl animate-pulse">
+                <div className="flex items-center justify-between gap-3 mb-2">
+                    <div className="flex items-center gap-2">
+                        <AlertOctagon size={18} className="text-white flex-shrink-0" />
+                        <div>
+                            <span className="text-xs font-bold uppercase tracking-wider block">Immediate Crisis Support (24/7 Free)</span>
+                            <span className="text-[11px] text-red-100 font-normal block">National mental health helplines are available right now:</span>
+                        </div>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <a
+                        href="tel:14416"
+                        className="py-1.5 px-3 bg-white text-red-600 font-bold text-xs rounded-xl text-center shadow hover:bg-red-50 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                        <Phone size={13} /> Tele-MANAS: 14416
+                    </a>
+                    <a
+                        href="tel:18005990019"
+                        className="py-1.5 px-3 bg-red-950 text-red-100 border border-red-400 font-bold text-xs rounded-xl text-center shadow hover:bg-red-900 active:scale-95 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                        <Phone size={13} /> KIRAN: 1800-599-0019
+                    </a>
+                </div>
+            </div>
+        )}
       </div>
 
       {/* Messages */}
