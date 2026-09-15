@@ -98,7 +98,9 @@ class MASOrchestrator:
 
         # ── 4. Compute drift ───────────────────────────────────────────────────
         try:
-            drift_score, drift_state = self.auditor.compute_drift(current_vec, baseline_vecs)
+            drift_score, drift_state = self.auditor.compute_drift(
+                current_vec, baseline_vecs, sentiment=sentiment
+            )
         except Exception as e:
             logger.warning(f"Drift computation failed (non-fatal): {e}")
             drift_score, drift_state = 0.0, "no_history"
