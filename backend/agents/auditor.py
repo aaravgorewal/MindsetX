@@ -41,6 +41,7 @@ class Auditor:
         self,
         current_vec: List[float],
         baseline_vecs: List[List[float]],
+        sentiment: float = 0.0,
     ) -> Tuple[float, str]:
         """
         Compute psychological drift using cosine similarity.
@@ -49,16 +50,29 @@ class Auditor:
         message embeddings to detect how much the student's expressed state has
         shifted from their recent baseline.
 
+        The returned drift_score is a DISSIMILARITY value in [0, 1]:
+          - 0.0 = identical to baseline (no drift)
+          - 1.0 = maximally different from baseline (maximum drift)
+
+        Escalation toward "high_risk" is additionally gated on sentiment:
+        a large semantic shift paired with POSITIVE sentiment is classified as
+        "improving" rather than "high_risk", since the student is moving in a
+        healthier direction.
+
         Args:
             current_vec:   Embedding of the current chat message.
             baseline_vecs: List of embeddings from recent past messages.
+            sentiment:     TextBlob polarity score (-1.0 to 1.0). Positive
+                           values suppress escalation to high_risk.
 
         Returns:
-            (drift_score, drift_state) where drift_state is one of:
+            (drift_score, drift_state) where drift_score is dissimilarity
+            [0=stable, 1=max drift] and drift_state is one of:
               - "no_history"   – no baseline to compare against
-              - "stable"       – avg similarity > 0.8  (minimal drift)
-              - "early_warning"– avg similarity 0.4–0.8
-              - "high_risk"    – avg similarity < 0.4  (significant drift)
+              - "stable"       – dissimilarity < 0.20  (minimal drift)
+              - "early_warning"– dissimilarity 0.20–0.60
+              - "improving"    – dissimilarity > 0.60  AND sentiment > 0.0
+              - "high_risk"    – dissimilarity > 0.60  AND sentiment ≤ 0.0
         """
         if not baseline_vecs:
             return 0.0, "no_history"
@@ -73,15 +87,30 @@ class Auditor:
             logger.warning(f"sklearn unavailable, using fallback cosine: {e}")
             avg_sim = self._manual_cosine_similarity(current_vec, baseline_vecs)
 
-        if avg_sim > 0.8:
+        # Convert to dissimilarity: 0 = no change, 1 = maximum drift.
+        # avg_sim is cosine similarity clamped to [0, 1] for embeddings.
+        dissimilarity = max(0.0, min(1.0, 1.0 - avg_sim))
+
+        # Thresholds on dissimilarity (intuitive: higher = more drift)
+        if dissimilarity < 0.20:
             state = "stable"
-        elif avg_sim > 0.4:
+        elif dissimilarity < 0.60:
             state = "early_warning"
         else:
-            state = "high_risk"
+            # Large semantic shift — direction matters.
+            # Positive sentiment means the student is expressing a healthier
+            # state very different from a negative baseline: that is improvement,
+            # not crisis.  Only flag high_risk when sentiment is also negative.
+            if sentiment > 0.0:
+                state = "improving"
+            else:
+                state = "high_risk"
 
-        logger.info(f"📊 Drift computed: score={avg_sim:.4f} → {state}")
-        return avg_sim, state
+        logger.info(
+            f"📊 Drift computed: sim={avg_sim:.4f} → dissimilarity={dissimilarity:.4f}"
+            f" sentiment={sentiment:+.3f} → {state}"
+        )
+        return round(dissimilarity, 4), state
 
     def _manual_cosine_similarity(
         self,
