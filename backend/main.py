@@ -439,6 +439,7 @@ async def chat(request: ChatRequest):
             "stable":        DriftState.STABLE,
             "early_warning": DriftState.DRIFTING,
             "high_risk":     DriftState.CRITICAL,
+            "improving":     DriftState.STABLE,   # positive semantic change, not a risk
             "no_history":    DriftState.NO_DATA,
         }
         unified_drift = drift_state_map.get(mas_result["drift_state"], DriftState.NO_DATA)
