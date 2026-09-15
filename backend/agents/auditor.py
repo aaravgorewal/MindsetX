@@ -42,38 +42,45 @@ class Auditor:
         current_vec: List[float],
         baseline_vecs: List[List[float]],
         sentiment: float = 0.0,
+        has_crisis_keywords: bool = False,
     ) -> Tuple[float, str]:
         """
         Compute psychological drift using cosine similarity.
-
-        Compares the embedding of the current message against a list of past
-        message embeddings to detect how much the student's expressed state has
-        shifted from their recent baseline.
 
         The returned drift_score is a DISSIMILARITY value in [0, 1]:
           - 0.0 = identical to baseline (no drift)
           - 1.0 = maximally different from baseline (maximum drift)
 
-        Escalation toward "high_risk" is additionally gated on sentiment:
-        a large semantic shift paired with POSITIVE sentiment is classified as
-        "improving" rather than "high_risk", since the student is moving in a
-        healthier direction.
+        Escalation rules (in priority order):
+          1. If has_crisis_keywords is True → always "high_risk", regardless
+             of dissimilarity or sentiment.  This prevents masked/cheerful
+             crisis language (e.g. "I'm fine, I've decided to end it all 😊")
+             from being gated out by a falsely-positive TextBlob score.
+          2. dissimilarity < 0.20                         → "stable"
+          3. dissimilarity 0.20–0.60                      → "early_warning"
+          4. dissimilarity > 0.60 AND sentiment > 0.0    → "improving"
+          5. dissimilarity > 0.60 AND sentiment ≤ 0.0    → "high_risk"
 
         Args:
-            current_vec:   Embedding of the current chat message.
-            baseline_vecs: List of embeddings from recent past messages.
-            sentiment:     TextBlob polarity score (-1.0 to 1.0). Positive
-                           values suppress escalation to high_risk.
+            current_vec:        Embedding of the current chat message.
+            baseline_vecs:      List of embeddings from recent past messages.
+            sentiment:          TextBlob polarity score (-1.0 to 1.0).
+            has_crisis_keywords: True if the raw message matched any pattern
+                                 in crisis_keywords.has_crisis_language().
 
         Returns:
             (drift_score, drift_state) where drift_score is dissimilarity
             [0=stable, 1=max drift] and drift_state is one of:
-              - "no_history"   – no baseline to compare against
-              - "stable"       – dissimilarity < 0.20  (minimal drift)
-              - "early_warning"– dissimilarity 0.20–0.60
-              - "improving"    – dissimilarity > 0.60  AND sentiment > 0.0
-              - "high_risk"    – dissimilarity > 0.60  AND sentiment ≤ 0.0
+              "no_history" | "stable" | "early_warning" | "improving" | "high_risk"
         """
+        # ── Keyword override: crisis language always wins ──────────────────────
+        # We still need a drift_score — compute it if we can, otherwise use 1.0.
+        if has_crisis_keywords and not baseline_vecs:
+            logger.info(
+                f"🚨 Drift override: crisis keywords detected, no baseline → high_risk"
+            )
+            return 1.0, "high_risk"
+
         if not baseline_vecs:
             return 0.0, "no_history"
 
@@ -88,27 +95,23 @@ class Auditor:
             avg_sim = self._manual_cosine_similarity(current_vec, baseline_vecs)
 
         # Convert to dissimilarity: 0 = no change, 1 = maximum drift.
-        # avg_sim is cosine similarity clamped to [0, 1] for embeddings.
         dissimilarity = max(0.0, min(1.0, 1.0 - avg_sim))
 
-        # Thresholds on dissimilarity (intuitive: higher = more drift)
-        if dissimilarity < 0.20:
+        # ── Escalation gate ───────────────────────────────────────────────────
+        # Priority 1: keyword override — bypass sentiment gate entirely.
+        if has_crisis_keywords:
+            state = "high_risk"
+        elif dissimilarity < 0.20:
             state = "stable"
         elif dissimilarity < 0.60:
             state = "early_warning"
         else:
-            # Large semantic shift — direction matters.
-            # Positive sentiment means the student is expressing a healthier
-            # state very different from a negative baseline: that is improvement,
-            # not crisis.  Only flag high_risk when sentiment is also negative.
-            if sentiment > 0.0:
-                state = "improving"
-            else:
-                state = "high_risk"
+            # Large semantic shift — direction matters unless keywords forced it.
+            state = "improving" if sentiment > 0.0 else "high_risk"
 
         logger.info(
-            f"📊 Drift computed: sim={avg_sim:.4f} → dissimilarity={dissimilarity:.4f}"
-            f" sentiment={sentiment:+.3f} → {state}"
+            f"📊 Drift: sim={avg_sim:.4f} → dissim={dissimilarity:.4f}"
+            f" sentiment={sentiment:+.3f} crisis_kw={has_crisis_keywords} → {state}"
         )
         return round(dissimilarity, 4), state
 
