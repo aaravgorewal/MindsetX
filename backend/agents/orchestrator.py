@@ -9,6 +9,7 @@ import logging
 from typing import Dict, Any, Optional
 
 from embedding_service import embed_text
+from crisis_keywords import has_crisis_language
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ class MASOrchestrator:
         message: str,
         session_id: Optional[str] = None,
         sentiment: float = 0.0,
+        has_crisis_keywords: bool = False,
     ) -> Dict[str, Any]:
         """
         Full MAS pipeline for a single chat turn:
@@ -99,7 +101,9 @@ class MASOrchestrator:
         # ── 4. Compute drift ───────────────────────────────────────────────────
         try:
             drift_score, drift_state = self.auditor.compute_drift(
-                current_vec, baseline_vecs, sentiment=sentiment
+                current_vec, baseline_vecs,
+                sentiment=sentiment,
+                has_crisis_keywords=has_crisis_keywords,
             )
         except Exception as e:
             logger.warning(f"Drift computation failed (non-fatal): {e}")
@@ -134,17 +138,7 @@ class MASOrchestrator:
 
     def _fallback_response(self, error: str, user_message: str = "") -> Dict[str, Any]:
         """Return a safe response when the pipeline fails, checking for crisis language first."""
-        text = (user_message or "").lower()
-        crisis_keywords = [
-            "suicide", "kill myself", "killing myself", "end my life", "ending my life", "end it all", "ending it all",
-            "harm myself", "harming myself", "hurt myself", "hurting myself", "want to die", "wanna die", "feel like dying",
-            "cut myself", "cutting myself", "slit my wrists", "slit my wrist", "take my life", "taking my life", "take my own life",
-            "better off dead", "don't want to live", "dont want to live", "no reason to live", "hang myself", "overdose",
-            "suicidal", "self harm", "self-harm", "mar jaunga", "khatam karna", "jaan deni", "jaan lena",
-            "jeena nahi", "mar jana", "khudkushi", "atmahatya", "zeher", "marna chahta",
-            "आत्महत्या", "खुदकुशी", "जान देनी", "जान लेना", "जीना नहीं", "मर जाना", "मरना चाहता", "मरना चाहती", "मर जाऊंगा", "मर जाऊंगी", "ज़हर"
-        ]
-        if any(kw in text for kw in crisis_keywords):
+        if has_crisis_language(user_message):
             return {
                 "reply": (
                     "I am deeply concerned about you and want to ensure you are safe. "
