@@ -49,6 +49,7 @@ from qdrant_cloud_config import get_qdrant_url, get_qdrant_api_key
 
 # Import MAS Orchestrator
 from agents.orchestrator import MASOrchestrator
+from crisis_keywords import has_crisis_language
 
 # Setup logging
 logging.basicConfig(
@@ -405,6 +406,11 @@ async def chat(request: ChatRequest):
         except Exception:
             sentiment = 0.0
 
+        # ── Crisis keyword check (single source of truth: crisis_keywords.py) ──
+        # Done BEFORE the MAS call so the Auditor can use it as an override
+        # that bypasses the sentiment gate (catches masked/cheerful crisis language).
+        message_has_crisis_kw = has_crisis_language(request.message)
+
         # ── Run MAS Pipeline ──────────────────────────────────────────────────
         mas = _get_mas()
         mas_result = await mas.process_chat(
@@ -412,6 +418,7 @@ async def chat(request: ChatRequest):
             message=request.message,
             session_id=session_id,
             sentiment=sentiment,
+            has_crisis_keywords=message_has_crisis_kw,
         )
         # mas_result keys: reply, drift_score, drift_state, actions
 
@@ -445,18 +452,8 @@ async def chat(request: ChatRequest):
         unified_drift = drift_state_map.get(mas_result["drift_state"], DriftState.NO_DATA)
 
         # ── Detect Crisis Language in User Message or MAS Output ──────────────────
-        is_crisis = mas_result.get("is_crisis", False)
-        lower_msg = request.message.lower()
-        crisis_keywords = [
-            "suicide", "kill myself", "killing myself", "end my life", "ending my life", "end it all", "ending it all",
-            "harm myself", "harming myself", "hurt myself", "hurting myself", "want to die", "wanna die", "feel like dying",
-            "cut myself", "cutting myself", "slit my wrists", "slit my wrist", "take my life", "taking my life", "take my own life",
-            "better off dead", "don't want to live", "dont want to live", "no reason to live", "hang myself", "overdose",
-            "suicidal", "self harm", "self-harm", "mar jaunga", "khatam karna", "jaan deni", "jaan lena",
-            "jeena nahi", "mar jana", "khudkushi", "atmahatya", "zeher", "marna chahta"
-        ]
-        if any(kw in lower_msg for kw in crisis_keywords):
-            is_crisis = True
+        # Re-use the pre-computed keyword flag (already passed to MAS above).
+        is_crisis = mas_result.get("is_crisis", False) or message_has_crisis_kw
 
         if is_crisis:
             unified_drift = DriftState.CRITICAL
@@ -477,9 +474,18 @@ async def chat(request: ChatRequest):
                 }
             ).dict())
         elif unified_drift == DriftState.DRIFTING:
-            actions.append(create_intervene_action(
-                f"Early-warning drift detected (score={mas_result['drift_score']:.2f}). Gentle intervention recommended."
-            ).dict())
+            # Soften the description for positive-sentiment check-ins: no alarm language.
+            if sentiment > 0.1:
+                intervene_desc = (
+                    f"Positive momentum detected (score={mas_result['drift_score']:.2f}). "
+                    "Keep doing what's working — you're making progress."
+                )
+            else:
+                intervene_desc = (
+                    f"Early-warning drift detected (score={mas_result['drift_score']:.2f}). "
+                    "Gentle check-in recommended."
+                )
+            actions.append(create_intervene_action(intervene_desc).dict())
         elif sentiment < -0.3:
             actions.append(create_monitor_action(
                 "Negative sentiment detected. Continue monitoring well-being."
