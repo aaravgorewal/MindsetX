@@ -44,6 +44,7 @@ class Strategist:
             "high_risk":     Strategy.CRISIS,
             "early_warning": Strategy.SUPPORTIVE,
             "stable":        Strategy.PREVENTIVE,
+            "improving":     Strategy.PREVENTIVE,  # positive drift, reinforce good momentum
             "no_history":    Strategy.SUPPORTIVE,
             "low_mood":      Strategy.SUPPORTIVE,
             "knowledge_gap": Strategy.EDUCATIONAL,
