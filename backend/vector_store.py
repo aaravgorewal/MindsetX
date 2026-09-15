@@ -232,6 +232,16 @@ def initialize_collections() -> None:
 
         try:
             client.create_payload_index(
+                collection_name=COLLECTION_CHAT_MEMORY,
+                field_name="user_id",
+                field_schema="keyword"
+            )
+            logger.info(f"✓ Payload index 'user_id' ensured on '{COLLECTION_CHAT_MEMORY}'")
+        except Exception:
+            pass  # Index may already exist
+
+        try:
+            client.create_payload_index(
                 collection_name=COLLECTION_PHQ9_VECTORS,
                 field_name="student_id",
                 field_schema="keyword"
