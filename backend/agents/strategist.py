@@ -7,6 +7,8 @@ import logging
 from typing import Dict, Any, List, Optional
 from enum import Enum
 
+from crisis_keywords import has_crisis_language
+
 logger = logging.getLogger(__name__)
 
 
@@ -78,17 +80,8 @@ class Strategist:
         """
         text = (user_message or "").lower().strip()
 
-        # 1. IMMEDIATE CRISIS CHECK
-        crisis_keywords = [
-            "suicide", "kill myself", "killing myself", "end my life", "ending my life", "end it all", "ending it all",
-            "harm myself", "harming myself", "hurt myself", "hurting myself", "want to die", "wanna die", "feel like dying",
-            "cut myself", "cutting myself", "slit my wrists", "slit my wrist", "take my life", "taking my life", "take my own life",
-            "better off dead", "don't want to live", "dont want to live", "no reason to live", "hang myself", "overdose",
-            "suicidal", "self harm", "self-harm", "mar jaunga", "khatam karna", "jaan deni", "jaan lena",
-            "jeena nahi", "mar jana", "khudkushi", "atmahatya", "zeher", "marna chahta",
-            "आत्महत्या", "खुदकुशी", "जान देनी", "जान लेना", "जीना नहीं", "मर जाना", "मरना चाहता", "मरना चाहती", "मर जाऊंगा", "मर जाऊंगी", "ज़हर"
-        ]
-        if any(kw in text for kw in crisis_keywords):
+        # 1. IMMEDIATE CRISIS CHECK (word-boundary regex via shared crisis_keywords module)
+        if has_crisis_language(user_message or ""):
             return {
                 "message": (
                     "I am deeply concerned about you and want to ensure you are safe. "
